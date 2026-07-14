@@ -1,0 +1,10 @@
+.env
+.venv/
+node_modules/
+frontend/dist/
+data/
+storage/
+__pycache__/
+.pytest_cache/
+.coverage
+
