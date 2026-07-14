@@ -1,13 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Check, CircleUserRound, Database, KeyRound, LoaderCircle, Mail, Plus, RefreshCw, Save, ServerCog, Settings2, Trash2, X } from 'lucide-react'
 import { api } from './api'
-import type { Provider, SystemSettings, User } from './types'
+import type { Provider, Quota, SystemSettings, User } from './types'
 
 type Section = 'overview' | 'models' | 'profile' | 'system'
 type Props = {
   open: boolean
   user: User
   providers: Provider[]
+  quota: Quota
   initialSection?: Section
   onClose: () => void
   onProviders: (providers: Provider[]) => void
@@ -151,6 +152,16 @@ export default function SettingsDrawer(props: Props) {
               <div><dt>默认生图</dt><dd>{selectedImage ? `${selectedImage.provider.name} · ${selectedImage.model}` : '尚未设置'}</dd></div>
               <div><dt>默认文本</dt><dd>{selectedText ? `${selectedText.provider.name} · ${selectedText.model}` : '尚未设置'}</dd></div>
             </dl>
+            <div className="quota-summary" aria-label="额度使用情况">
+              <div className="quota-meter">
+                <div><span>图片额度</span><strong>{props.quota.used} / {props.quota.limit}</strong></div>
+                <div className="quota-track" role="progressbar" aria-label="图片额度" aria-valuemin={0} aria-valuemax={props.quota.limit} aria-valuenow={props.quota.used}><span style={{ width: `${Math.min(100, Math.max(0, props.quota.limit ? props.quota.used / props.quota.limit * 100 : 0))}%` }} /></div>
+              </div>
+              <div className="quota-meter">
+                <div><span>会话额度</span><strong>{props.quota.conversations_used} / {props.quota.conversations_limit}</strong></div>
+                <div className="quota-track" role="progressbar" aria-label="会话额度" aria-valuemin={0} aria-valuemax={props.quota.conversations_limit} aria-valuenow={props.quota.conversations_used}><span style={{ width: `${Math.min(100, Math.max(0, props.quota.conversations_limit ? props.quota.conversations_used / props.quota.conversations_limit * 100 : 0))}%` }} /></div>
+              </div>
+            </div>
             <button className="secondary-button" onClick={() => setSection('models')}>管理渠道与默认模型</button>
           </section>}
 

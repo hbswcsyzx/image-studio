@@ -66,6 +66,7 @@ export default function Studio(props: Props) {
   const uploadRef = useRef<HTMLInputElement>(null)
 
   const runs = workspace?.runs ?? []
+  const timelineRuns = useMemo(() => [...runs].reverse(), [runs])
   const assets = useMemo(() => runs.flatMap(run => run.assets), [runs])
   const selected = assets.find(asset => asset.id === selectedId) ?? assets[0]
   const imageProvider = props.providers.find(item => item.id === props.user.preferences.default_image_provider_id)
@@ -212,15 +213,15 @@ export default function Studio(props: Props) {
   return <div className="studio-shell">
     <header className="topbar">
       <div className="topbar-left"><button className="icon-button" onClick={openSessions} aria-label="打开会话"><Menu /></button><div className="compact-brand"><Aperture /><span>Basil Studio</span></div></div>
-      <div className="topbar-title"><h1>{workspace?.name ?? '新会话'}</h1><span>{props.quota.used} / {props.quota.limit} 张</span></div>
+      <div className="topbar-title"><h1>{workspace?.name ?? '新会话'}</h1></div>
       <div className="topbar-actions"><div className="theme-control"><button className="icon-button" aria-label="切换主题" onClick={() => setThemeMenu(!themeMenu)}><Sun /></button>{themeMenu && <div className="menu" role="menu"><button role="menuitem" onClick={() => applyTheme('system')}>跟随系统</button><button role="menuitem" onClick={() => applyTheme('light')}>浅色</button><button role="menuitem" onClick={() => applyTheme('dark')}>深色</button></div>}</div><button className="icon-button" onClick={() => openSettings()} aria-label="打开设置"><Settings /></button></div>
     </header>
 
     <main className="workspace-main">
-      <aside className="run-timeline" aria-label="历史刻度"><div className="timeline-title"><History /><span>{runs.length}</span></div><div className="timeline-scroll">{runs.map((run, runIndex) => run.assets.length ? run.assets.map(asset => <button key={asset.id} className={asset.id === selected?.id ? 'timeline-thumb active' : 'timeline-thumb'} aria-label={`查看第 ${runs.length - runIndex} 次生成`} onClick={() => restoreRun(run, asset.id)}><img src={asset.content_url} alt="历史生成图" />{asset.favorite && <Star className="thumb-star" fill="currentColor" />}</button>) : <button key={run.id} className="timeline-failed" aria-label={`查看失败的第 ${runs.length - runIndex} 次生成`} onClick={() => restoreRun(run)}><X /><span>失败</span></button>)}</div></aside>
+      <aside className="run-timeline" aria-label="历史刻度"><div className="timeline-title"><History /><span>{runs.length}</span></div><div className="timeline-scroll">{timelineRuns.map((run, runIndex) => run.assets.length ? run.assets.map(asset => <button key={asset.id} className={asset.id === selected?.id ? 'timeline-thumb active' : 'timeline-thumb'} aria-label={`查看第 ${runIndex + 1} 次生成`} onClick={() => restoreRun(run, asset.id)}><img src={asset.content_url} alt="历史生成图" />{asset.favorite && <Star className="thumb-star" fill="currentColor" />}</button>) : <button key={run.id} className="timeline-failed" aria-label={`查看失败的第 ${runIndex + 1} 次生成`} onClick={() => restoreRun(run)}><X /><span>失败</span></button>)}</div></aside>
 
       <section className="output-stage" aria-label="图片输出">
-        {selected ? <><div className="selected-image-wrap"><img src={selected.content_url} alt="生成结果" className="selected-image" /></div><div className="image-actions"><button className={selected.favorite ? 'icon-button active-icon' : 'icon-button'} aria-label={selected.favorite ? '取消收藏图片' : '收藏图片'} onClick={() => favoriteAsset(selected)}><Heart fill={selected.favorite ? 'currentColor' : 'none'} /></button><a className="icon-button" href={selected.download_url} aria-label="下载图片"><Download /></a><button className="icon-button danger" aria-label="删除图片" onClick={() => deleteAsset(selected)}><Trash2 /></button></div><div className="image-meta">{selected.width} × {selected.height}</div></> : <div className="empty-output"><ImagePlus /><h2>从一个想法开始</h2><p>输入提示词，或添加参考图</p></div>}
+        {selected ? <><div className="selected-image-wrap"><img key={selected.id} src={selected.content_url} alt="生成结果" className="selected-image" /></div><div className="image-actions"><button className={selected.favorite ? 'icon-button active-icon' : 'icon-button'} aria-label={selected.favorite ? '取消收藏图片' : '收藏图片'} onClick={() => favoriteAsset(selected)}><Heart fill={selected.favorite ? 'currentColor' : 'none'} /></button><a className="icon-button" href={selected.download_url} aria-label="下载图片"><Download /></a><button className="icon-button danger" aria-label="删除图片" onClick={() => deleteAsset(selected)}><Trash2 /></button></div><div className="image-meta">{selected.width} × {selected.height}</div></> : <div className="empty-output"><ImagePlus /><h2>从一个想法开始</h2><p>输入提示词，或添加参考图</p></div>}
         {busy === 'generate' && <div className="generation-overlay" role="status"><LoaderCircle className="spin" /><strong>{references.length ? '正在参考图片生成' : '正在生成图片'}</strong><span>已等待 {elapsed} 秒，结果返回后会自动保存</span></div>}
       </section>
 
@@ -235,7 +236,7 @@ export default function Studio(props: Props) {
     </main>
 
     <SessionDrawer open={sessionsOpen} currentId={currentId} workspaces={props.workspaces} favorites={favoriteAssets} quota={props.quota} onClose={() => setSessionsOpen(false)} onNew={newWorkspace} onLoad={loadWorkspace} onRename={renameWorkspace} onFavorite={favoriteWorkspace} onDelete={deleteWorkspace} onSelectFavorite={selectFavorite} />
-    <SettingsDrawer open={settingsOpen} user={props.user} providers={props.providers} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} onProviders={props.onProviders} onUser={props.onUser} onLogout={props.onLogout} />
+    <SettingsDrawer open={settingsOpen} user={props.user} providers={props.providers} quota={props.quota} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} onProviders={props.onProviders} onUser={props.onUser} onLogout={props.onLogout} />
     {showGuide && <OnboardingGuide onConfigure={() => finishGuide(true)} onLater={() => finishGuide(false)} />}
   </div>
 }
