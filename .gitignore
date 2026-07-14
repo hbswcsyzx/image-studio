@@ -12,3 +12,4 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 .pytest_cache/
 .coverage
+.superpowers/
