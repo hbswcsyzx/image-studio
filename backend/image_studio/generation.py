@@ -9,6 +9,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from PIL import Image, ImageFilter, ImageOps
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from .auth import get_current_user
 from .assets import owned_asset
@@ -267,7 +268,8 @@ async def generate(
         )
     api_key = decrypt_secret(request.app.state.settings.encryption_key, provider["api_key_encrypted"])
     try:
-        outputs = generate_images(
+        outputs = await run_in_threadpool(
+            generate_images,
             base_url=provider["base_url"], api_key=api_key, model=model, prompt=prompt.strip(),
             size=size, quality=quality, count=count, background=background,
             output_format=output_format, output_compression=output_compression,

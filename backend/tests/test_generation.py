@@ -1,5 +1,6 @@
 import base64
 import io
+import threading
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -92,6 +93,29 @@ def test_text_generation_persists_b64_output(client: TestClient, register, monke
     assert payloads[0]["output_compression"] == 82
     assert response.json()["params"]["background"] == "transparent"
     assert client.get("/api/quota").json()["used"] == 1
+
+
+def test_generation_work_does_not_block_the_request_event_loop(client: TestClient, register, monkeypatch):
+    provider, workspace = setup_provider_and_workspace(client, register)
+    worker_threads = []
+
+    def fake_generate(**_kwargs):
+        worker_threads.append(threading.current_thread().name)
+        return [{"bytes": make_png(), "mime_type": "image/png"}]
+
+    monkeypatch.setattr("image_studio.generation.generate_images", fake_generate)
+    response = client.post(
+        f"/api/workspaces/{workspace['id']}/generate",
+        data={
+            "provider_id": provider["id"],
+            "model": "gpt-image-2",
+            "prompt": "A responsive request",
+            "size": "1024x1024",
+        },
+    )
+
+    assert response.status_code == 201
+    assert worker_threads == ["AnyIO worker thread"]
 
 
 def test_reference_upload_selects_edit_path(client: TestClient, register, monkeypatch):
