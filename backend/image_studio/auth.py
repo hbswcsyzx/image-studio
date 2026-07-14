@@ -1,3 +1,4 @@
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -25,8 +26,18 @@ class Credentials(BaseModel):
 
 class ProfileUpdate(BaseModel):
     username: str | None = None
+    email: str | None = None
     current_password: str | None = None
     new_password: str | None = Field(default=None, min_length=8, max_length=256)
+
+
+class PreferencesUpdate(BaseModel):
+    default_image_provider_id: str | None = None
+    default_image_model: str | None = None
+    default_text_provider_id: str | None = None
+    default_text_model: str | None = None
+    history_summary_enabled: bool | None = None
+    onboarding_completed: bool | None = None
 
 
 def serialize_user(row) -> dict:
@@ -35,6 +46,9 @@ def serialize_user(row) -> dict:
         "username": row["username"],
         "role": row["role"],
         "must_change_password": bool(row["must_change_password"]),
+        "email": row["email"],
+        "onboarding_completed": bool(row["onboarding_completed"]),
+        "preferences": json.loads(row["preferences_json"] or "{}"),
     }
 
 
@@ -133,6 +147,12 @@ def update_profile(payload: ProfileUpdate, request: Request, user=Depends(get_cu
             raise HTTPException(status_code=422, detail="用户名格式不正确")
         updates.extend(["username=?", "username_norm=?"])
         values.extend([username, username.casefold()])
+    if payload.email is not None:
+        email = payload.email.strip() or None
+        if email and ("@" not in email or len(email) > 254):
+            raise HTTPException(status_code=422, detail="邮箱格式不正确")
+        updates.append("email=?")
+        values.append(email)
     if payload.new_password is not None:
         if not payload.current_password or not verify_password(user["password_hash"], payload.current_password):
             raise HTTPException(status_code=400, detail="当前密码不正确")
@@ -150,3 +170,22 @@ def update_profile(payload: ProfileUpdate, request: Request, user=Depends(get_cu
     with request.app.state.db.connect() as connection:
         return serialize_user(connection.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone())
 
+
+@router.patch("/preferences")
+def update_preferences(payload: PreferencesUpdate, request: Request, user=Depends(get_current_user)):
+    preferences = json.loads(user["preferences_json"] or "{}")
+    values = payload.model_dump(exclude_none=True)
+    onboarding = values.pop("onboarding_completed", None)
+    preferences.update(values)
+    assignments = ["preferences_json=?"]
+    params: list[object] = [json.dumps(preferences)]
+    if onboarding is not None:
+        assignments.append("onboarding_completed=?")
+        params.append(int(onboarding))
+    params.append(user["id"])
+    with request.app.state.db.connect() as connection:
+        connection.execute(
+            f"UPDATE users SET {', '.join(assignments)} WHERE id=?", params
+        )
+        row = connection.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
+    return serialize_user(row)

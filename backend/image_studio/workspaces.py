@@ -15,6 +15,11 @@ class WorkspaceInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class WorkspaceUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    favorite: bool | None = None
+
+
 def owned_workspace(request: Request, workspace_id: str, user_id: str):
     with request.app.state.db.connect() as connection:
         row = connection.execute(
@@ -38,6 +43,7 @@ def serialize_workspace(request: Request, row, detailed: bool = False) -> dict:
         "id": row["id"],
         "user_id": row["user_id"],
         "name": row["name"],
+        "favorite": bool(row["favorite"]),
         "image_count": count,
         "latest_asset_id": latest["id"] if latest else None,
         "created_at": row["created_at"],
@@ -82,6 +88,15 @@ def list_workspaces(request: Request, user=Depends(get_current_user)):
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_workspace(payload: WorkspaceInput, request: Request, user=Depends(get_current_user)):
+    with request.app.state.db.connect() as connection:
+        used = connection.execute(
+            "SELECT COUNT(*) FROM workspaces WHERE user_id=?", (user["id"],)
+        ).fetchone()[0]
+    if used >= 100:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "conversation_quota_exceeded", "used": used, "limit": 100},
+        )
     workspace_id = str(uuid.uuid4())
     with request.app.state.db.connect() as connection:
         connection.execute(
@@ -99,13 +114,25 @@ def get_workspace(workspace_id: str, request: Request, user=Depends(get_current_
 
 @router.patch("/{workspace_id}")
 def update_workspace(
-    workspace_id: str, payload: WorkspaceInput, request: Request, user=Depends(get_current_user)
+    workspace_id: str, payload: WorkspaceUpdate, request: Request, user=Depends(get_current_user)
 ):
     owned_workspace(request, workspace_id, user["id"])
+    assignments = []
+    values: list[object] = []
+    if payload.name is not None:
+        assignments.append("name=?")
+        values.append(payload.name.strip())
+    if payload.favorite is not None:
+        assignments.append("favorite=?")
+        values.append(int(payload.favorite))
+    if not assignments:
+        raise HTTPException(status_code=422, detail="没有需要更新的内容")
+    assignments.append("updated_at=CURRENT_TIMESTAMP")
+    values.extend([workspace_id, user["id"]])
     with request.app.state.db.connect() as connection:
         connection.execute(
-            "UPDATE workspaces SET name=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
-            (payload.name.strip(), workspace_id, user["id"]),
+            f"UPDATE workspaces SET {', '.join(assignments)} WHERE id=? AND user_id=?",
+            values,
         )
         row = connection.execute("SELECT * FROM workspaces WHERE id=?", (workspace_id,)).fetchone()
     return serialize_workspace(request, row)
@@ -119,4 +146,3 @@ def delete_workspace(workspace_id: str, request: Request, user=Depends(get_curre
         connection.execute(
             "DELETE FROM workspaces WHERE id=? AND user_id=?", (workspace_id, user["id"])
         )
-

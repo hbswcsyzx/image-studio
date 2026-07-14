@@ -23,7 +23,8 @@ class OptimizeInput(BaseModel):
 
 def generate_images(
     *, base_url: str, api_key: str, model: str, prompt: str, size: str,
-    quality: str, count: int, reference_images: list[tuple[str, bytes, str]]
+    quality: str, count: int, background: str, output_format: str,
+    output_compression: int, reference_images: list[tuple[str, bytes, str]]
 ) -> list[dict]:
     headers = {"Authorization": f"Bearer {api_key}"}
     timeout = httpx.Timeout(480.0, connect=30.0)
@@ -31,19 +32,27 @@ def generate_images(
         with httpx.Client(timeout=timeout, trust_env=False) as client:
             if reference_images:
                 files = [("image[]", (name, content, mime)) for name, content, mime in reference_images]
-                data = {"model": model, "prompt": prompt, "size": size, "quality": quality, "n": str(count)}
+                data = {
+                    "model": model, "prompt": prompt, "size": size, "quality": quality,
+                    "n": str(count), "background": background, "output_format": output_format,
+                    "output_compression": str(output_compression),
+                }
                 response = client.post(api_endpoint(base_url, "images/edits"), headers=headers, data=data, files=files)
             else:
                 response = client.post(
                     api_endpoint(base_url, "images/generations"), headers={**headers, "Content-Type": "application/json"},
-                    json={"model": model, "prompt": prompt, "size": size, "quality": quality, "n": count},
+                    json={
+                        "model": model, "prompt": prompt, "size": size, "quality": quality,
+                        "n": count, "background": background, "output_format": output_format,
+                        "output_compression": output_compression,
+                    },
                 )
             response.raise_for_status()
             items = []
             for item in response.json().get("data", []):
                 if item.get("b64_json"):
                     content = base64.b64decode(item["b64_json"])
-                    mime = "image/png"
+                    mime = {"jpeg": "image/jpeg", "webp": "image/webp"}.get(output_format, "image/png")
                 elif item.get("url"):
                     downloaded = client.get(item["url"])
                     downloaded.raise_for_status()
@@ -97,6 +106,9 @@ async def generate(
     size: str = Form("1024x1024"),
     quality: str = Form("high"),
     count: int = Form(1),
+    background: str = Form("auto"),
+    output_format: str = Form("png"),
+    output_compression: int = Form(100),
     references: list[UploadFile] = File(default=[]),
     user=Depends(get_current_user),
 ):
@@ -109,6 +121,12 @@ async def generate(
         raise HTTPException(status_code=409, detail={"code": "quota_exceeded", "used": used, "limit": limit})
     if not prompt.strip():
         raise HTTPException(status_code=422, detail="请输入提示词")
+    if background not in {"auto", "transparent", "opaque"}:
+        raise HTTPException(status_code=422, detail="背景参数不正确")
+    if output_format not in {"png", "jpeg", "webp"}:
+        raise HTTPException(status_code=422, detail="输出格式不正确")
+    if output_compression < 0 or output_compression > 100:
+        raise HTTPException(status_code=422, detail="压缩质量需为 0-100")
 
     reference_images = []
     for upload in references[:4]:
@@ -118,7 +136,11 @@ async def generate(
         reference_images.append((upload.filename or "reference.png", content, upload.content_type or "image/png"))
 
     run_id = str(uuid.uuid4())
-    params = {"size": size, "quality": quality, "count": count, "reference_count": len(reference_images)}
+    params = {
+        "size": size, "quality": quality, "count": count,
+        "background": background, "output_format": output_format,
+        "output_compression": output_compression, "reference_count": len(reference_images),
+    }
     with request.app.state.db.connect() as connection:
         connection.execute(
             """INSERT INTO runs(id,user_id,workspace_id,provider_id,model,prompt,params_json,status)
@@ -129,7 +151,9 @@ async def generate(
     try:
         outputs = generate_images(
             base_url=provider["base_url"], api_key=api_key, model=model, prompt=prompt.strip(),
-            size=size, quality=quality, count=count, reference_images=reference_images,
+            size=size, quality=quality, count=count, background=background,
+            output_format=output_format, output_compression=output_compression,
+            reference_images=reference_images,
         )
         assets = [
             request.app.state.assets.save_generated(

@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import assets, auth, generation, providers, workspaces
+from . import assets, auth, generation, providers, system_settings, workspaces
 from .assets import AssetService
 from .auth import get_current_user
 from .db import Database
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(workspaces.router)
     app.include_router(assets.router)
     app.include_router(generation.router)
+    app.include_router(system_settings.router)
 
     @app.get("/api/health")
     def health():
@@ -44,7 +45,16 @@ def create_app() -> FastAPI:
     @app.get("/api/quota")
     def quota(request: Request, user=Depends(get_current_user)):
         used, limit = request.app.state.assets.quota(user["id"])
-        return {"used": used, "limit": limit}
+        with request.app.state.db.connect() as connection:
+            conversations = connection.execute(
+                "SELECT COUNT(*) FROM workspaces WHERE user_id=?", (user["id"],)
+            ).fetchone()[0]
+        return {
+            "used": used,
+            "limit": limit,
+            "conversations_used": conversations,
+            "conversations_limit": 100,
+        }
 
     @app.get("/api/admin/users")
     def admin_users(request: Request, user=Depends(get_current_user)):
@@ -64,4 +74,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

@@ -33,10 +33,12 @@ export default function AuthScreen({ onAuth }: { onAuth: (user: User) => void })
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="primary-button" disabled={loading}>{loading ? <LoaderCircle className="spin" /> : <ArrowRight />} {mode === 'login' ? '登录' : '注册'}</button>
       </form>
-      <button className="text-button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
-        {mode === 'login' ? '没有账户？立即注册' : '已有账户？返回登录'}
-      </button>
+      <p className="auth-switch">
+        {mode === 'login' ? '没有账户？' : '已有账户？'}
+        <button className="auth-switch-link" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
+          {mode === 'login' ? '立即注册' : '返回登录'}
+        </button>
+      </p>
     </section>
   </main>
 }
-

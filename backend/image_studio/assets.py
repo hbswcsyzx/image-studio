@@ -6,11 +6,16 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from PIL import Image
+from pydantic import BaseModel
 
 from .auth import get_current_user
 
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
+
+
+class AssetUpdate(BaseModel):
+    favorite: bool
 
 
 class AssetService:
@@ -104,6 +109,7 @@ def serialize_asset(row) -> dict:
         "width": row["width"],
         "height": row["height"],
         "size_bytes": row["size_bytes"],
+        "favorite": bool(row["favorite"]),
         "created_at": row["created_at"],
         "content_url": f"/api/assets/{row['id']}/content",
         "download_url": f"/api/assets/{row['id']}/download",
@@ -115,6 +121,24 @@ def owned_asset(request: Request, asset_id: str, user_id: str):
     if not asset:
         raise HTTPException(status_code=404, detail="图片不存在")
     return asset
+
+
+@router.get("/favorites")
+def favorite_assets(request: Request, user=Depends(get_current_user)):
+    with request.app.state.db.connect() as connection:
+        rows = connection.execute(
+            """SELECT a.*,r.prompt,r.model,r.params_json
+               FROM assets a LEFT JOIN runs r ON r.id=a.run_id
+               WHERE a.user_id=? AND a.favorite=1
+               ORDER BY a.created_at DESC""",
+            (user["id"],),
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = serialize_asset(row)
+        item.update({"prompt": row["prompt"], "model": row["model"], "params": row["params_json"]})
+        result.append(item)
+    return result
 
 
 @router.get("/{asset_id}/content")
@@ -134,8 +158,18 @@ def download(asset_id: str, request: Request, user=Depends(get_current_user)):
     )
 
 
+@router.patch("/{asset_id}")
+def update_asset(asset_id: str, payload: AssetUpdate, request: Request, user=Depends(get_current_user)):
+    owned_asset(request, asset_id, user["id"])
+    with request.app.state.db.connect() as connection:
+        connection.execute(
+            "UPDATE assets SET favorite=? WHERE id=? AND user_id=?",
+            (int(payload.favorite), asset_id, user["id"]),
+        )
+    return request.app.state.assets.get(asset_id, user["id"])
+
+
 @router.delete("/{asset_id}", status_code=204)
 def delete_asset(asset_id: str, request: Request, user=Depends(get_current_user)):
     if not request.app.state.assets.delete(asset_id, user["id"]):
         raise HTTPException(status_code=404, detail="图片不存在")
-

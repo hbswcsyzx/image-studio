@@ -10,18 +10,20 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [providers, setProviders] = useState<Provider[]>([])
-  const [quota, setQuota] = useState<Quota>({ used: 0, limit: 1000 })
+  const [quota, setQuota] = useState<Quota>({ used: 0, limit: 1000, conversations_used: 0, conversations_limit: 100 })
   const [loading, setLoading] = useState(true)
 
   async function loadStudio(nextUser: User) {
     setUser(nextUser)
-    const [workspaceItems, providerItems, quotaValue] = await Promise.all([
+    const [workspaceItems, providerItems, initialQuota] = await Promise.all([
       api<Workspace[]>('/api/workspaces'), api<Provider[]>('/api/providers'), api<Quota>('/api/quota'),
     ])
     let items = workspaceItems
+    let quotaValue = initialQuota
     if (items.length === 0) {
       const first = await api<Workspace>('/api/workspaces', { method: 'POST', body: JSON.stringify({ name: '未命名会话' }) })
       items = [first]
+      quotaValue = await api<Quota>('/api/quota')
     }
     const detail = await api<Workspace>(`/api/workspaces/${items[0].id}`)
     setWorkspaces([detail, ...items.slice(1)]); setProviders(providerItems); setQuota(quotaValue)
@@ -43,4 +45,3 @@ export default function App() {
   if (!user) return <AuthScreen onAuth={async next => { setLoading(true); try { await loadStudio(next) } finally { setLoading(false) } }} />
   return <Studio user={user} workspaces={workspaces} providers={providers} quota={quota} onUser={setUser} onWorkspaces={setWorkspaces} onProviders={setProviders} onQuota={setQuota} onLogout={logout} />
 }
-

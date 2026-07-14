@@ -10,6 +10,10 @@ from .security import decrypt_secret, encrypt_secret
 
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
+IMAGE_MODEL_MARKERS = (
+    "image", "dall-e", "dalle", "flux", "imagen", "ideogram", "recraft", "sdxl",
+    "stable-diffusion",
+)
 
 
 class ProviderInput(BaseModel):
@@ -46,12 +50,16 @@ def fetch_models(base_url: str, api_key: str) -> list[str]:
 
 
 def serialize_provider(row) -> dict:
+    models = json.loads(row["models_json"])
+    image_models = [model for model in models if any(marker in model.lower() for marker in IMAGE_MODEL_MARKERS)]
     return {
         "id": row["id"],
         "name": row["name"],
         "base_url": row["base_url"],
         "has_api_key": bool(row["api_key_encrypted"]),
-        "models": json.loads(row["models_json"]),
+        "models": models,
+        "image_models": image_models,
+        "text_models": [model for model in models if model not in image_models],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

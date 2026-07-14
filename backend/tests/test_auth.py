@@ -54,3 +54,35 @@ def test_user_cannot_read_another_users_data(client: TestClient, register):
     response = client.get(f"/api/workspaces/{workspace['id']}")
     assert response.status_code == 404
 
+
+def test_profile_email_and_model_preferences_are_user_scoped(client: TestClient, register):
+    register("alice")
+    profile = client.patch(
+        "/api/auth/profile", json={"username": "alice-new", "email": "alice@example.com"}
+    )
+    assert profile.status_code == 200
+    assert profile.json()["username"] == "alice-new"
+    assert profile.json()["email"] == "alice@example.com"
+
+    preferences = client.patch(
+        "/api/auth/preferences",
+        json={
+            "default_image_provider_id": "image-provider",
+            "default_image_model": "gpt-image-2",
+            "default_text_provider_id": "text-provider",
+            "default_text_model": "gpt-5.5",
+            "history_summary_enabled": True,
+            "onboarding_completed": True,
+        },
+    )
+    assert preferences.status_code == 200
+    payload = preferences.json()
+    assert payload["onboarding_completed"] is True
+    assert payload["preferences"]["default_image_model"] == "gpt-image-2"
+    assert payload["preferences"]["default_text_model"] == "gpt-5.5"
+
+    client.post("/api/auth/logout")
+    register("bob")
+    bob = client.get("/api/auth/me").json()
+    assert bob["email"] is None
+    assert bob["preferences"] == {}

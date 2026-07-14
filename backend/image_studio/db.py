@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL DEFAULT 'user',
   must_change_password INTEGER NOT NULL DEFAULT 0,
   disabled INTEGER NOT NULL DEFAULT 0,
+  email TEXT,
+  preferences_json TEXT NOT NULL DEFAULT '{}',
+  onboarding_completed INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -34,6 +37,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  favorite INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -60,12 +64,33 @@ CREATE TABLE IF NOT EXISTS assets (
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   size_bytes INTEGER NOT NULL,
+  favorite INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_workspaces_user ON workspaces(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_workspace ON runs(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_assets_user_kind ON assets(user_id, kind);
+CREATE TABLE IF NOT EXISTS system_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  smtp_host TEXT NOT NULL DEFAULT '',
+  smtp_port INTEGER NOT NULL DEFAULT 587,
+  smtp_username TEXT NOT NULL DEFAULT '',
+  smtp_password_encrypted TEXT NOT NULL DEFAULT '',
+  smtp_sender TEXT NOT NULL DEFAULT '',
+  smtp_tls INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
+
+ADDITIVE_COLUMNS = {
+    "users": {
+        "email": "TEXT",
+        "preferences_json": "TEXT NOT NULL DEFAULT '{}'",
+        "onboarding_completed": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "workspaces": {"favorite": "INTEGER NOT NULL DEFAULT 0"},
+    "assets": {"favorite": "INTEGER NOT NULL DEFAULT 0"},
+}
 
 
 class Database:
@@ -82,4 +107,10 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
-
+            for table, columns in ADDITIVE_COLUMNS.items():
+                existing = {
+                    row["name"] for row in connection.execute(f"PRAGMA table_info({table})")
+                }
+                for name, definition in columns.items():
+                    if name not in existing:
+                        connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")

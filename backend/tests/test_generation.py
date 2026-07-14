@@ -40,11 +40,18 @@ def test_text_generation_persists_b64_output(client: TestClient, register, monke
             "size": "2048x1152",
             "quality": "high",
             "count": "1",
+            "background": "transparent",
+            "output_format": "webp",
+            "output_compression": "82",
         },
     )
     assert response.status_code == 201, response.text
     assert response.json()["assets"][0]["width"] == 64
     assert payloads[0]["reference_images"] == []
+    assert payloads[0]["background"] == "transparent"
+    assert payloads[0]["output_format"] == "webp"
+    assert payloads[0]["output_compression"] == 82
+    assert response.json()["params"]["background"] == "transparent"
     assert client.get("/api/quota").json()["used"] == 1
 
 
@@ -108,3 +115,27 @@ def test_quota_blocks_generation(client: TestClient, register, monkeypatch):
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "quota_exceeded"
 
+
+def test_failed_generation_is_visible_in_run_history(client: TestClient, register, monkeypatch):
+    provider, workspace = setup_provider_and_workspace(client, register)
+
+    def fail_generate(**_kwargs):
+        raise RuntimeError("上游请求失败 (524)")
+
+    monkeypatch.setattr("image_studio.generation.generate_images", fail_generate)
+    response = client.post(
+        f"/api/workspaces/{workspace['id']}/generate",
+        data={
+            "provider_id": provider["id"],
+            "model": "gpt-image-2",
+            "prompt": "retry me",
+            "size": "1400x900",
+            "quality": "medium",
+            "count": "1",
+        },
+    )
+    assert response.status_code == 502
+    run = client.get(f"/api/workspaces/{workspace['id']}").json()["runs"][0]
+    assert run["status"] == "failed"
+    assert run["error"] == "上游请求失败 (524)"
+    assert run["params"]["size"] == "1400x900"
