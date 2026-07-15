@@ -243,11 +243,18 @@ export default function Studio(props: Props) {
 
   async function optimize() {
     setError('')
-    if (!textProvider || !textModel) { openSettings('models'); setError('请先在设置中选择默认文本模型'); return }
+    if (!textProvider || !textModel || !textProvider.text_models.includes(textModel)) { openSettings('models'); setError('当前默认文本模型无效或属于图片模型，请在设置中重新选择语言模型'); return }
     if (!workspace || !prompt.trim()) { setError('请先输入提示词'); return }
     setBusy('optimize')
     try {
-      const result = await api<{ suggestion: string }>(`/api/workspaces/${workspace.id}/optimize`, { method: 'POST', body: JSON.stringify({ provider_id: textProvider.id, model: textModel, prompt }) })
+      const form = new FormData()
+      form.set('provider_id', textProvider.id); form.set('model', textModel); form.set('prompt', prompt)
+      form.set('style_prompt', stylePresets.find(item => item.id === style)?.prompt ?? '')
+      form.set('size', effectiveSize); form.set('quality', quality); form.set('count', String(count))
+      form.set('background', background); form.set('output_format', outputFormat); form.set('output_compression', String(compression))
+      referencedAssets.forEach(asset => form.append('reference_asset_ids', asset.id))
+      references.forEach(file => form.append('references', file))
+      const result = await api<{ suggestion: string }>(`/api/workspaces/${workspace.id}/optimize`, { method: 'POST', body: form })
       setPrompt(result.suggestion)
     } catch (err) { setError(err instanceof Error ? err.message : '润色失败，请重试') }
     finally { setBusy('') }

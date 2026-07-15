@@ -5,7 +5,7 @@ import threading
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from image_studio.generation import canvas_prompt, conform_image_to_size, generate_images, validate_output_size
+from image_studio.generation import canvas_prompt, conform_image_to_size, generate_images, optimize_prompt, validate_output_size
 
 
 def make_png() -> bytes:
@@ -306,6 +306,100 @@ def test_prompt_optimization_is_explicit(client: TestClient, register, monkeypat
     )
     assert response.status_code == 200
     assert response.json()["suggestion"].startswith("A precise")
+
+
+def test_prompt_optimization_sends_style_settings_and_reference_images(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"output": [{"type": "message", "content": [{"type": "output_text", "text": "润色后的完整提示词"}]}]}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, _url, **kwargs):
+            calls.append(kwargs["json"])
+            return FakeResponse()
+
+    monkeypatch.setattr("image_studio.generation.httpx.Client", FakeClient)
+
+    result = optimize_prompt(
+        base_url="https://up.example",
+        api_key="key",
+        model="gpt-5.5",
+        prompt="画一个角色",
+        style_prompt="冷色电影感",
+        settings={"size": "2048x1152", "quality": "high"},
+        reference_images=[("reference.png", make_png(), "image/png")],
+    )
+
+    assert result == "润色后的完整提示词"
+    payload = calls[0]
+    assert payload["max_output_tokens"] == 2048
+    assert payload["reasoning"] == {"effort": "low"}
+    content = payload["input"][0]["content"]
+    assert "冷色电影感" in content[0]["text"]
+    assert "2048x1152" in content[0]["text"]
+    assert content[1]["type"] == "input_image"
+    assert content[1]["image_url"].startswith("data:image/jpeg;base64,")
+
+
+def test_prompt_optimization_endpoint_accepts_rich_multipart_context(client: TestClient, register, monkeypatch):
+    provider, workspace = setup_provider_and_workspace(client, register)
+    seen = {}
+
+    def fake_optimize(**kwargs):
+        seen.update(kwargs)
+        return "润色后的提示词"
+
+    monkeypatch.setattr("image_studio.generation.optimize_prompt", fake_optimize)
+    response = client.post(
+        f"/api/workspaces/{workspace['id']}/optimize",
+        data={
+            "provider_id": provider["id"], "model": "gpt-5.5", "prompt": "画一个角色",
+            "style_prompt": "冷色电影感", "size": "2048x1152", "quality": "high", "count": "2",
+        },
+        files=[("references", ("reference.png", make_png(), "image/png"))],
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["suggestion"] == "润色后的提示词"
+    assert seen["style_prompt"] == "冷色电影感"
+    assert seen["settings"]["size"] == "2048x1152"
+    assert len(seen["reference_images"]) == 1
+
+
+def test_prompt_optimization_rejects_image_model_before_upstream(client: TestClient, register, monkeypatch):
+    provider, workspace = setup_provider_and_workspace(client, register)
+    monkeypatch.setattr(
+        "image_studio.generation.optimize_prompt",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("image model reached upstream")),
+    )
+
+    response = client.post(
+        f"/api/workspaces/{workspace['id']}/optimize",
+        json={
+            "provider_id": provider["id"],
+            "model": "seedream-5.0",
+            "prompt": "blue circle",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "图片模型" in response.json()["detail"]
 
 
 def test_quota_blocks_generation(client: TestClient, register, monkeypatch):

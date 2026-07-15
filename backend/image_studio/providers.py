@@ -12,8 +12,13 @@ from .security import decrypt_secret, encrypt_secret
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 IMAGE_MODEL_MARKERS = (
     "image", "dall-e", "dalle", "flux", "imagen", "ideogram", "recraft", "sdxl",
-    "stable-diffusion",
+    "stable-diffusion", "seedream",
 )
+
+
+def is_image_model(model: str) -> bool:
+    normalized = model.strip().lower()
+    return any(marker in normalized for marker in IMAGE_MODEL_MARKERS)
 
 
 class ProviderInput(BaseModel):
@@ -51,7 +56,7 @@ def fetch_models(base_url: str, api_key: str) -> list[str]:
 
 def serialize_provider(row) -> dict:
     models = json.loads(row["models_json"])
-    image_models = [model for model in models if any(marker in model.lower() for marker in IMAGE_MODEL_MARKERS)]
+    image_models = [model for model in models if is_image_model(model)]
     return {
         "id": row["id"],
         "name": row["name"],

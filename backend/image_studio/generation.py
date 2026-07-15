@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .auth import get_current_user
 from .assets import owned_asset
-from .providers import api_endpoint, owned_provider
+from .providers import api_endpoint, is_image_model, owned_provider
 from .security import decrypt_secret
 from .workspaces import owned_workspace
 
@@ -173,27 +173,71 @@ def generate_images(
         raise RuntimeError(f"无法连接上游：{exc}") from exc
 
 
-def optimize_prompt(*, base_url: str, api_key: str, model: str, prompt: str) -> str:
+def _responses_text(payload: dict) -> str:
+    direct = payload.get("output_text")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    output_types = []
+    for output in payload.get("output", []):
+        if not isinstance(output, dict):
+            continue
+        output_types.append(str(output.get("type", "unknown")))
+        for content in output.get("content", []):
+            if not isinstance(content, dict):
+                continue
+            text = content.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+            if isinstance(text, dict) and isinstance(text.get("value"), str) and text["value"].strip():
+                return text["value"].strip()
+    raise ValueError(f"上游返回了响应但没有最终文本建议（output 类型：{', '.join(output_types) or '空'}）")
+
+
+def _response_image_data(content: bytes, mime_type: str) -> str:
+    try:
+        with Image.open(io.BytesIO(content)) as opened:
+            opened.load()
+            image = opened.convert("RGB")
+            image.thumbnail((768, 768), Image.Resampling.LANCZOS)
+            output = io.BytesIO()
+            image.save(output, "JPEG", quality=84, optimize=True)
+            content, mime_type = output.getvalue(), "image/jpeg"
+    except Exception:
+        pass
+    return f"data:{mime_type};base64,{base64.b64encode(content).decode('ascii')}"
+
+
+def optimize_prompt(
+    *, base_url: str, api_key: str, model: str, prompt: str,
+    style_prompt: str = "", settings: dict[str, object] | None = None,
+    reference_images: list[tuple[str, bytes, str]] | None = None,
+) -> str:
+    references = reference_images or []
+    context = [f"用户原始提示词：{prompt.strip()}"]
+    if style_prompt.strip():
+        context.append(f"用户选择的风格约束（必须保留其意图）：{style_prompt.strip()}")
+    if settings:
+        context.append("用户当前图片设置（不要擅自改动，除非提示词明确要求）：" + json.dumps(settings, ensure_ascii=False))
+    context.append("请返回一条可以直接发送给图片模型的完整润色后提示词，只输出提示词正文，不要解释过程。")
+    text_input = "\n\n".join(context)
+    content = [{"type": "input_text", "text": text_input}]
+    content.extend({"type": "input_image", "image_url": _response_image_data(data, mime)} for _name, data, mime in references)
+    payload = {
+        "model": model,
+        "instructions": "你是图片提示词润色助手。保留主体、动作和意图，结合风格约束、图片设置与参考图补足可视化细节。不要擅自改变技术参数，不要添加无关内容。",
+        "input": [{"role": "user", "content": content}],
+        "max_output_tokens": 2048,
+        "reasoning": {"effort": "low"},
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     try:
         with httpx.Client(trust_env=False, timeout=90) as client:
-            response = client.post(
-                api_endpoint(base_url, "responses"),
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": model,
-                    "instructions": "Improve the user's image-generation prompt. Preserve intent, add only useful visual specificity, and return only the revised prompt in the user's language.",
-                    "input": prompt,
-                },
-            )
+            response = client.post(api_endpoint(base_url, "responses"), headers=headers, json=payload)
+            if references and response.status_code >= 400:
+                fallback_content = [{"type": "input_text", "text": text_input + "\n参考图未能提供给文本模型，请仅依据文字完成润色。"}]
+                response = client.post(api_endpoint(base_url, "responses"), headers=headers, json={**payload, "input": [{"role": "user", "content": fallback_content}]})
         response.raise_for_status()
-        payload = response.json()
-        if payload.get("output_text"):
-            return payload["output_text"].strip()
-        for output in payload.get("output", []):
-            for content in output.get("content", []):
-                if content.get("text"):
-                    return content["text"].strip()
-        raise ValueError("上游没有返回建议")
+        return _responses_text(response.json())
     except (httpx.HTTPError, ValueError) as exc:
         raise RuntimeError(f"提示词优化失败：{exc}") from exc
 
@@ -296,11 +340,37 @@ async def generate(
 
 
 @router.post("/api/workspaces/{workspace_id}/optimize")
-def optimize(workspace_id: str, payload: OptimizeInput, request: Request, user=Depends(get_current_user)):
+async def optimize_rich(workspace_id: str, request: Request, user=Depends(get_current_user)):
     owned_workspace(request, workspace_id, user["id"])
-    provider = owned_provider(request, payload.provider_id, user["id"])
+    content_type = request.headers.get("content-type", "")
+    references: list[tuple[str, bytes, str]] = []
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        provider_id = str(form.get("provider_id", ""))
+        model = str(form.get("model", ""))
+        prompt = str(form.get("prompt", ""))
+        style_prompt = str(form.get("style_prompt", ""))
+        settings = {key: str(form.get(key, "")) for key in ("size", "quality", "count", "background", "output_format", "output_compression") if form.get(key) is not None}
+        reference_asset_ids = [str(value) for key, value in form.multi_items() if key == "reference_asset_ids"]
+        uploads = [value for key, value in form.multi_items() if key == "references" and hasattr(value, "read") and hasattr(value, "filename")]
+        for asset_id in reference_asset_ids[:4]:
+            asset = owned_asset(request, asset_id, user["id"])
+            references.append((f"asset-{asset_id}.jpg", request.app.state.assets._safe_path(asset["path"]).read_bytes(), asset["mime_type"]))
+        for upload in uploads[: max(0, 4 - len(references))]:
+            references.append((upload.filename or "reference.jpg", await upload.read(), upload.content_type or "image/jpeg"))
+    else:
+        payload = OptimizeInput.model_validate(await request.json())
+        provider_id, model, prompt, style_prompt, settings = payload.provider_id, payload.model, payload.prompt, "", None
+    provider = owned_provider(request, provider_id, user["id"])
+    if is_image_model(model):
+        raise HTTPException(status_code=422, detail="当前模型是图片模型，请在设置中选择语言模型")
     api_key = decrypt_secret(request.app.state.settings.encryption_key, provider["api_key_encrypted"])
     try:
-        return {"suggestion": optimize_prompt(base_url=provider["base_url"], api_key=api_key, model=payload.model, prompt=payload.prompt)}
+        suggestion = await run_in_threadpool(
+            optimize_prompt,
+            base_url=provider["base_url"], api_key=api_key, model=model, prompt=prompt,
+            style_prompt=style_prompt, settings=settings, reference_images=references,
+        )
+        return {"suggestion": suggestion}
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

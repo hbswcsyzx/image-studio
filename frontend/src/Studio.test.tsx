@@ -243,3 +243,35 @@ test('derives editable presets from only the current conversation', async () => 
   expect(await screen.findByRole('dialog', { name: '归纳预设' })).toBeInTheDocument()
   expect(screen.getByText('归纳当前会话偏好')).toBeInTheDocument()
 })
+
+test('does not send an image model to prompt optimization', async () => {
+  const invalidTextUser = { ...user, preferences: { ...user.preferences, default_text_provider_id: 'pi', default_text_model: 'seedream-5.0' } }
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  render(<Studio user={invalidTextUser} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+
+  await userEvent.type(screen.getByRole('textbox', { name: '描述你想生成的图片' }), 'blue circle')
+  await userEvent.click(screen.getByRole('button', { name: '一键润色' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('默认文本模型')
+})
+
+test('sends style, image settings, and reference images to prompt optimization', async () => {
+  let submitted: FormData | undefined
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/optimize')) { submitted = init?.body as FormData; return Response.json({ suggestion: '润色后的提示词' }) }
+    return Response.json([])
+  }))
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:reference'), revokeObjectURL: vi.fn() })
+  render(<Studio user={user} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: '风格预设' }), 'card')
+  await userEvent.upload(screen.getByLabelText('上传参考图'), new File(['image'], 'reference.png', { type: 'image/png' }))
+  await userEvent.type(screen.getByRole('textbox', { name: '描述你想生成的图片' }), '只保留主体')
+  await userEvent.click(screen.getByRole('button', { name: '一键润色' }))
+  await waitFor(() => expect(submitted).toBeDefined())
+
+  expect(submitted?.get('style_prompt')).toContain('卡牌')
+  expect(submitted?.get('size')).toBe('2048x1152')
+  expect(submitted?.get('quality')).toBe('high')
+  expect(submitted?.get('references')).toBeInstanceOf(File)
+})
