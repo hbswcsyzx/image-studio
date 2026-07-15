@@ -2,11 +2,12 @@ import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from 're
 import { Aperture, Download, Heart, History, ImagePlus, LoaderCircle, Menu, Settings, Sparkles, Star, Sun, Trash2, Upload, X } from 'lucide-react'
 import { api, ApiError } from './api'
 import OnboardingGuide from './OnboardingGuide'
+import PresetReviewDialog from './PresetReviewDialog'
 import SessionDrawer from './SessionDrawer'
 import SettingsDrawer from './SettingsDrawer'
 import { validateImageSize } from './imageSize'
 import { resolveImagePresets, resolveStylePresets } from './stylePresets'
-import type { Asset, Provider, Quota, Run, User, Workspace } from './types'
+import type { Asset, DerivedPresetResult, Provider, Quota, Run, User, Workspace } from './types'
 
 type Props = {
   user: User
@@ -64,6 +65,9 @@ export default function Studio(props: Props) {
   const [selectedId, setSelectedId] = useState('')
   const [draggingAssetId, setDraggingAssetId] = useState('')
   const [favoriteAssets, setFavoriteAssets] = useState<Asset[]>([])
+  const [deriving, setDeriving] = useState(false)
+  const [derivedResult, setDerivedResult] = useState<DerivedPresetResult | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
   const uploadRef = useRef<HTMLInputElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
 
@@ -249,6 +253,18 @@ export default function Studio(props: Props) {
     finally { setBusy('') }
   }
 
+  async function derivePresets() {
+    setError('')
+    if (!textProvider || !textModel) { openSettings('models'); setError('请先在设置中选择默认文本模型'); return }
+    if (!workspace || !runs.some(run => run.status === 'completed' && run.assets.length > 0)) { setError('当前会话还没有成功生成的图片，暂时无法归纳预设'); return }
+    setDeriving(true)
+    try {
+      const result = await api<DerivedPresetResult>(`/api/workspaces/${workspace.id}/derive-presets`, { method: 'POST' })
+      setDerivedResult(result); setReviewOpen(true)
+    } catch (err) { setError(err instanceof Error ? err.message : '归纳预设失败，请重试') }
+    finally { setDeriving(false) }
+  }
+
   async function favoriteAsset(asset: Asset) {
     const updated = await api<Asset>(`/api/assets/${asset.id}`, { method: 'PATCH', body: JSON.stringify({ favorite: !asset.favorite }) })
     if (workspace) setWorkspace({ ...workspace, runs: runs.map(run => ({ ...run, assets: run.assets.map(item => item.id === updated.id ? updated : item) })) })
@@ -279,7 +295,7 @@ export default function Studio(props: Props) {
   return <div className="studio-shell">
     <header className="topbar">
       <div className="topbar-left"><button className="icon-button" onClick={openSessions} aria-label="打开会话"><Menu /></button><div className="compact-brand"><Aperture /><span>Basil Studio</span></div></div>
-      <div className="topbar-title"><h1>{workspace?.name ?? '新会话'}</h1></div>
+      <div className="topbar-title"><h1>{workspace?.name ?? '新会话'}</h1><button className="derive-preset-button" aria-label="归纳当前会话预设" title="从当前会话归纳预设" onClick={derivePresets} disabled={deriving}>{deriving ? <LoaderCircle className="spin" /> : <Sparkles />}<span>{deriving ? '归纳中' : '归纳预设'}</span></button></div>
       <div className="topbar-actions"><div className="theme-control"><button className="icon-button" aria-label="切换主题" onClick={() => setThemeMenu(!themeMenu)}><Sun /></button>{themeMenu && <div className="menu" role="menu"><button role="menuitem" onClick={() => applyTheme('system')}>跟随系统</button><button role="menuitem" onClick={() => applyTheme('light')}>浅色</button><button role="menuitem" onClick={() => applyTheme('dark')}>深色</button></div>}</div><button className="icon-button" onClick={() => openSettings()} aria-label="打开设置"><Settings /></button></div>
     </header>
 
@@ -303,6 +319,7 @@ export default function Studio(props: Props) {
 
     <SessionDrawer open={sessionsOpen} currentId={currentId} workspaces={props.workspaces} favorites={favoriteAssets} quota={props.quota} onClose={() => setSessionsOpen(false)} onNew={newWorkspace} onLoad={loadWorkspace} onRename={renameWorkspace} onFavorite={favoriteWorkspace} onDelete={deleteWorkspace} onSelectFavorite={selectFavorite} />
     <SettingsDrawer open={settingsOpen} user={props.user} providers={props.providers} quota={props.quota} initialSection={settingsSection} onClose={() => setSettingsOpen(false)} onProviders={props.onProviders} onUser={props.onUser} onLogout={props.onLogout} />
+    <PresetReviewDialog open={reviewOpen} result={derivedResult} user={props.user} onClose={() => setReviewOpen(false)} onUser={props.onUser} />
     {showGuide && <OnboardingGuide onConfigure={() => finishGuide(true)} onLater={() => finishGuide(false)} />}
   </div>
 }

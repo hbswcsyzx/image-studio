@@ -224,3 +224,22 @@ test('applies image presets independently and marks manual changes as custom set
   expect(screen.getByRole('combobox', { name: '尺寸' })).toHaveValue('1024x1024')
   expect(screen.getByRole('combobox', { name: '质量' })).toHaveValue('high')
 })
+
+test('derives editable presets from only the current conversation', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === '/api/workspaces/w1/derive-presets') return Response.json({
+      summary: '归纳当前会话偏好',
+      style_draft: { name: '冷峻人物', prompt: '冷色、真实材质、克制光影并突出人物表情和轮廓，避免无关装饰抢夺主体注意力。', confidence: 0.8, accepted: ['冷色'], changes: ['表情更严厉'], uncertain: [] },
+      image_draft: { name: '横向高质量', size: '2048x1152', quality: 'high', count: 1, background: 'auto', output_format: 'png', output_compression: 100, confidence: 0.7, accepted: ['横向'], changes: [], uncertain: [] },
+      statistics: { successful_runs: 1, generated_images: 1, favorite_images: 0, refinement_steps: 0, failed_runs_excluded: 0, representative_images: 1 },
+      used_visual_analysis: true, fallback_reason: null,
+    })
+    return Response.json([])
+  }))
+  render(<Studio user={user} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+
+  await userEvent.click(screen.getByRole('button', { name: '归纳当前会话预设' }))
+
+  expect(await screen.findByRole('dialog', { name: '归纳预设' })).toBeInTheDocument()
+  expect(screen.getByText('归纳当前会话偏好')).toBeInTheDocument()
+})

@@ -96,6 +96,37 @@ export type Quota = {
   conversations_limit: number
 }
 
+export type DerivedEvidence = {
+  accepted: string[]
+  changes: string[]
+  uncertain: string[]
+  confidence: number
+}
+
+export type DerivedPresetResult = {
+  summary: string
+  style_draft: DerivedEvidence & { name: string; prompt: string }
+  image_draft: DerivedEvidence & {
+    name: string
+    size: string
+    quality: string
+    count: number
+    background: string
+    output_format: string
+    output_compression: number
+  }
+  statistics: {
+    successful_runs: number
+    generated_images: number
+    favorite_images: number
+    refinement_steps: number
+    failed_runs_excluded: number
+    representative_images: number
+  }
+  used_visual_analysis: boolean
+  fallback_reason: string | null
+}
+
 export type SystemSettings = {
   smtp_host: string
   smtp_port: number

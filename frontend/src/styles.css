@@ -96,6 +96,11 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .topbar-title { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
 .topbar-title h1 { margin: 0; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 680; }
 .topbar-title span { color: var(--muted); font-size: 11px; }
+.derive-preset-button { height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease; }
+.derive-preset-button:hover:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 52%, var(--border)); background: var(--accent-soft); }
+.derive-preset-button:disabled { opacity: .65; cursor: wait; }
+.derive-preset-button svg { width: 14px; height: 14px; }
+.topbar-title .derive-preset-button span { color: inherit; font-size: 11px; }
 .theme-control { position: relative; }
 .menu { position: absolute; right: 0; top: 43px; z-index: 30; width: 126px; padding: 5px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); box-shadow: var(--shadow-soft); transform-origin: top right; animation: menu-in 180ms var(--ease-out) both; }
 .menu button { width: 100%; padding: 8px 10px; border: 0; border-radius: 4px; text-align: left; background: transparent; color: var(--text); cursor: pointer; }
@@ -258,7 +263,33 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .settings-message { position: sticky; bottom: 0; margin-top: 16px; padding: 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); }
 
 .modal-layer { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(7, 10, 8, .58); backdrop-filter: blur(5px); }
+.modal-scrim { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: default; }
 .onboarding-panel { position: relative; width: min(720px, 100%); padding: 30px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); animation: modal-in 220ms var(--ease-out) both; }
+.preset-review-dialog { position: relative; z-index: 1; width: min(940px, 100%); max-height: min(860px, calc(100vh - 40px)); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); animation: modal-in 220ms var(--ease-out) both; }
+.preset-review-dialog > header, .preset-review-dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; }
+.preset-review-dialog > header { border-bottom: 1px solid var(--border); }
+.preset-review-dialog > header h2 { margin: 2px 0 0; font-size: 18px; }
+.preset-review-dialog > footer { justify-content: flex-end; border-top: 1px solid var(--border); }
+.derivation-summary { padding: 13px 18px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.derivation-summary p { margin: 0 0 9px; line-height: 1.55; }
+.derivation-stats { display: flex; flex-wrap: wrap; gap: 7px 16px; color: var(--muted); font-size: 11px; }
+.derivation-notice { margin: 0; padding: 10px 18px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); color: var(--warning); font-size: 12px; }
+.derivation-notice svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.preset-review-content { min-height: 0; display: grid; grid-template-columns: 1.1fr .9fr; overflow-y: auto; }
+.preset-review-section { min-width: 0; padding: 18px; display: grid; align-content: start; gap: 12px; }
+.preset-review-section + .preset-review-section { border-left: 1px solid var(--border); }
+.preset-save-toggle { grid-template-columns: auto auto 1fr; align-items: center; gap: 9px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.preset-save-toggle input { width: 17px; height: 17px; padding: 0; }
+.preset-save-toggle > svg { width: 18px; height: 18px; color: var(--accent); }
+.preset-save-toggle span { display: grid; gap: 2px; }
+.preset-save-toggle small { color: var(--muted); font-size: 10px; }
+.derived-image-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.derivation-evidence { display: grid; gap: 10px; padding-top: 4px; }
+.derivation-evidence > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
+.derivation-evidence strong { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.derivation-evidence strong svg { width: 13px; height: 13px; }
+.derivation-evidence ul { margin: 0; padding-left: 17px; font-size: 11px; line-height: 1.55; }
+.preset-review-dialog > .form-error { margin: 0; padding: 9px 18px; border-top: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border)); }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes menu-in { from { opacity: 0; transform: translateY(-5px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -298,6 +329,10 @@ button:disabled { cursor: not-allowed; opacity: .52; }
   .selected-image-wrap { inset: 14px; }
   .generation-dock { grid-row: 3; grid-column: 1; max-height: none; grid-template-columns: 1fr; overflow: visible; }
   .dock-section + .dock-section { border-left: 0; border-top: 1px solid var(--border); }
+  .preset-review-content { grid-template-columns: 1fr; }
+  .preset-review-section + .preset-review-section { border-left: 0; border-top: 1px solid var(--border); }
+  .preset-review-dialog { max-height: calc(100vh - 20px); }
+  .modal-layer { padding: 10px; }
   .action-zone { grid-column: 1; }
   .settings-layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .settings-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 7px; border-right: 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
