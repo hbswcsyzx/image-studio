@@ -205,3 +205,22 @@ test('shows and submits the selected generation count separately from reference 
   expect(submitted?.get('quality')).toBe('medium')
   expect(submitted?.get('count')).toBe('3')
 })
+
+test('applies image presets independently and marks manual changes as custom settings', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  render(<Studio user={user} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+
+  const imagePreset = screen.getByRole('combobox', { name: '图片设置预设' })
+  await userEvent.selectOptions(imagePreset, 'quick-square')
+  expect(screen.getByRole('combobox', { name: '尺寸' })).toHaveValue('1024x1024')
+  expect(screen.getByRole('combobox', { name: '质量' })).toHaveValue('auto')
+  expect(screen.getByRole('combobox', { name: '数量' })).toHaveValue('1')
+  expect(imagePreset).toHaveValue('quick-square')
+
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: '质量' }), 'high')
+  expect(imagePreset).toHaveValue('custom')
+
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: '风格预设' }), 'card')
+  expect(screen.getByRole('combobox', { name: '尺寸' })).toHaveValue('1024x1024')
+  expect(screen.getByRole('combobox', { name: '质量' })).toHaveValue('high')
+})

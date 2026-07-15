@@ -5,7 +5,7 @@ import OnboardingGuide from './OnboardingGuide'
 import SessionDrawer from './SessionDrawer'
 import SettingsDrawer from './SettingsDrawer'
 import { validateImageSize } from './imageSize'
-import { resolveStylePresets } from './stylePresets'
+import { resolveImagePresets, resolveStylePresets } from './stylePresets'
 import type { Asset, Provider, Quota, Run, User, Workspace } from './types'
 
 type Props = {
@@ -49,6 +49,7 @@ export default function Studio(props: Props) {
   const [references, setReferences] = useState<File[]>([])
   const [referencedAssets, setReferencedAssets] = useState<Asset[]>([])
   const [style, setStyle] = useState('')
+  const [imagePreset, setImagePreset] = useState('landscape-2k')
   const [size, setSize] = useState('2048x1152')
   const [customWidth, setCustomWidth] = useState(1600)
   const [customHeight, setCustomHeight] = useState(896)
@@ -75,6 +76,7 @@ export default function Studio(props: Props) {
   const imageModel = props.user.preferences.default_image_model ?? ''
   const textModel = props.user.preferences.default_text_model ?? ''
   const stylePresets = useMemo(() => resolveStylePresets(props.user.preferences), [props.user.preferences])
+  const imagePresets = useMemo(() => resolveImagePresets(props.user.preferences), [props.user.preferences])
   const effectiveSize = size === 'custom' ? `${customWidth}x${customHeight}` : size
 
   useEffect(() => {
@@ -88,7 +90,28 @@ export default function Studio(props: Props) {
     if (imageModel === 'gpt-image-2' && background === 'transparent') setBackground('auto')
   }, [background, imageModel])
 
+  useEffect(() => {
+    if (imagePreset !== 'custom' && !imagePresets.some(item => item.id === imagePreset)) setImagePreset('custom')
+  }, [imagePreset, imagePresets])
+
   function openSettings(section: SettingsSection = 'overview') { setSettingsSection(section); setSettingsOpen(true) }
+
+  function applyImagePreset(id: string) {
+    if (id === 'custom') { setImagePreset('custom'); return }
+    const preset = imagePresets.find(item => item.id === id)
+    if (!preset) return
+    const sizeError = validateImageSize(preset.size)
+    if (sizeError) { setError(sizeError); return }
+    if (imageModel === 'gpt-image-2' && preset.background === 'transparent') { setError('当前生图模型不支持透明背景，请修改这个图片预设'); return }
+    if (sizes.includes(preset.size)) setSize(preset.size)
+    else {
+      const [width, height] = preset.size.split('x').map(Number)
+      setSize('custom'); setCustomWidth(width); setCustomHeight(height)
+    }
+    setQuality(preset.quality); setCount(preset.count); setBackground(preset.background)
+    setOutputFormat(preset.output_format); setCompression(preset.output_compression)
+    setImagePreset(id); setError('')
+  }
 
   async function loadWorkspace(id: string, preferredAsset = '') {
     const detail = await api<Workspace>(`/api/workspaces/${id}`)
@@ -167,7 +190,7 @@ export default function Studio(props: Props) {
   }
 
   function restoreRun(run: Run, assetId = '') {
-    setPrompt(run.prompt); setStyle('')
+    setPrompt(run.prompt); setStyle(''); setImagePreset('custom')
     const citedIds = Array.isArray(run.params.reference_asset_ids) ? run.params.reference_asset_ids : []
     setReferencedAssets(citedIds.map(id => assets.find(asset => asset.id === id)).filter((asset): asset is Asset => Boolean(asset)))
     setReferences([])
@@ -271,7 +294,7 @@ export default function Studio(props: Props) {
       <section className="generation-dock" aria-label="生成设置">
         <div role="region" aria-label="图片与提示词输入区" className={draggingAssetId ? 'dock-section input-zone reference-drop-active' : 'dock-section input-zone'} onDragOver={allowAssetDrop} onDrop={dropAsset} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingAssetId('') }}><div className="dock-heading"><span>01</span><strong>输入</strong></div><textarea ref={promptRef} aria-label="描述你想生成的图片" value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="描述你想生成的图片" rows={4} /><div className="input-tools"><input ref={uploadRef} id="reference-upload" className="sr-only" type="file" accept="image/*" multiple onChange={addReferences} aria-label="上传参考图" /><button className="secondary-button" onClick={() => uploadRef.current?.click()}><Upload /> 参考图</button><label className="compact-select"><span className="sr-only">风格预设</span><select aria-label="风格预设" value={style} onChange={event => { if (event.target.value === '__manage__') { setStyle(''); openSettings('styles') } else setStyle(event.target.value) }}><option value="">无预设风格</option>{stylePresets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="__manage__">管理 / 自定义风格…</option></select></label><button className="secondary-button" onClick={optimize} disabled={busy !== ''}>{busy === 'optimize' ? <LoaderCircle className="spin" /> : <Sparkles />} 一键润色</button></div>{references.length + referencedAssets.length > 0 && <div className="reference-grid">{referencedAssets.map(asset => <CitedAssetThumb key={asset.id} asset={asset} onRemove={() => setReferencedAssets(current => current.filter(item => item.id !== asset.id))} />)}{references.map(file => <ReferenceThumb key={`${file.name}-${file.size}-${file.lastModified}`} file={file} onRemove={() => setReferences(current => current.filter(item => item !== file))} />)}{references.length + referencedAssets.length < 4 && <button className="reference-add" aria-label="继续添加参考图" onClick={() => uploadRef.current?.click()}><PlusIcon /></button>}</div>}</div>
 
-        <div className="dock-section params-zone"><div className="dock-heading"><span>02</span><strong>图片设置</strong></div><div className="parameter-grid"><label>尺寸<select value={size} onChange={event => setSize(event.target.value)}><option value="1024x1024">1:1 · 1024</option><option value="1536x1024">3:2 · 横向</option><option value="1024x1536">2:3 · 纵向</option><option value="2048x1152">16:9 · 2K</option><option value="3840x2160">16:9 · 4K</option><option value="custom">自定义</option></select></label>{size === 'custom' && <div className="custom-size"><label>宽<input type="number" min="256" max="3840" step="16" value={customWidth} onChange={event => setCustomWidth(Number(event.target.value))} /></label><span>×</span><label>高<input type="number" min="256" max="3840" step="16" value={customHeight} onChange={event => setCustomHeight(Number(event.target.value))} /></label></div>}<label>质量<select value={quality} onChange={event => setQuality(event.target.value)}><option value="auto">自动</option><option value="medium">标准</option><option value="high">高</option></select></label><label>数量<select value={count} onChange={event => setCount(Number(event.target.value))}>{[1,2,3,4].map(item => <option key={item}>{item}</option>)}</select></label></div><details className="advanced-settings"><summary>更多设置</summary><div><label>背景<select value={background} onChange={event => setBackground(event.target.value)}><option value="auto">自动</option><option value="opaque">不透明</option>{imageModel !== 'gpt-image-2' && <option value="transparent">透明</option>}</select></label><label>格式<select value={outputFormat} onChange={event => setOutputFormat(event.target.value)}><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></label>{outputFormat !== 'png' && <label>压缩<input type="number" min="0" max="100" value={compression} onChange={event => setCompression(Number(event.target.value))} /></label>}</div></details></div>
+        <div className="dock-section params-zone"><div className="dock-heading"><span>02</span><strong>图片设置</strong></div><label className="image-preset-select"><span>图片设置预设</span><select aria-label="图片设置预设" value={imagePreset} onChange={event => applyImagePreset(event.target.value)}><option value="custom">自定义设置</option>{imagePresets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="parameter-grid"><label>尺寸<select value={size} onChange={event => { setSize(event.target.value); setImagePreset('custom') }}><option value="1024x1024">1:1 · 1024</option><option value="1536x1024">3:2 · 横向</option><option value="1024x1536">2:3 · 纵向</option><option value="2048x1152">16:9 · 2K</option><option value="3840x2160">16:9 · 4K</option><option value="custom">自定义</option></select></label>{size === 'custom' && <div className="custom-size"><label>宽<input type="number" min="256" max="3840" step="16" value={customWidth} onChange={event => { setCustomWidth(Number(event.target.value)); setImagePreset('custom') }} /></label><span>×</span><label>高<input type="number" min="256" max="3840" step="16" value={customHeight} onChange={event => { setCustomHeight(Number(event.target.value)); setImagePreset('custom') }} /></label></div>}<label>质量<select value={quality} onChange={event => { setQuality(event.target.value); setImagePreset('custom') }}><option value="auto">自动</option><option value="medium">标准</option><option value="high">高</option></select></label><label>数量<select value={count} onChange={event => { setCount(Number(event.target.value)); setImagePreset('custom') }}>{[1,2,3,4].map(item => <option key={item}>{item}</option>)}</select></label></div><details className="advanced-settings"><summary>更多设置</summary><div><label>背景<select value={background} onChange={event => { setBackground(event.target.value); setImagePreset('custom') }}><option value="auto">自动</option><option value="opaque">不透明</option>{imageModel !== 'gpt-image-2' && <option value="transparent">透明</option>}</select></label><label>格式<select value={outputFormat} onChange={event => { setOutputFormat(event.target.value); setImagePreset('custom') }}><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></label>{outputFormat !== 'png' && <label>压缩<input type="number" min="0" max="100" value={compression} onChange={event => { setCompression(Number(event.target.value)); setImagePreset('custom') }} /></label>}</div></details></div>
 
         <div className="dock-section action-zone"><div className="dock-heading"><span>03</span><strong>生成</strong></div><div className={references.length + referencedAssets.length ? 'mode-indicator reference-mode' : 'mode-indicator'}><span>生成 {count} 张</span><small>{references.length + referencedAssets.length ? `${references.length + referencedAssets.length} 张参考图` : '无参考图'}</small><small>{effectiveSize} · {quality === 'high' ? '高质量' : quality === 'medium' ? '标准' : '自动'}</small></div><button className="primary-button generate-button" onClick={generate} disabled={busy !== ''}>{busy === 'generate' ? <LoaderCircle className="spin" /> : <Aperture />} 生成图片</button></div>
         {error && <p className="dock-error" role="alert">{error}</p>}
