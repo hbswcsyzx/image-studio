@@ -5,6 +5,20 @@ export type StylePreset = {
   builtin: boolean
 }
 
+export type ImagePreset = {
+  id: string
+  name: string
+  size: string
+  custom_width?: number
+  custom_height?: number
+  quality: string
+  count: number
+  background: string
+  output_format: string
+  output_compression: number
+  builtin: boolean
+}
+
 export type UserPreferences = {
   default_image_provider_id?: string
   default_image_model?: string
@@ -12,6 +26,7 @@ export type UserPreferences = {
   default_text_model?: string
   history_summary_enabled?: boolean
   style_presets?: StylePreset[]
+  image_presets?: ImagePreset[]
 }
 
 export type User = {

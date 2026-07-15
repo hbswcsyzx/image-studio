@@ -114,3 +114,58 @@ def test_style_presets_are_editable_and_user_scoped(client: TestClient, register
     client.post("/api/auth/logout")
     register("bob")
     assert "style_presets" not in client.get("/api/auth/me").json()["preferences"]
+
+
+def test_empty_style_and_image_preset_libraries_remain_empty(client: TestClient, register):
+    register()
+
+    updated = client.patch(
+        "/api/auth/preferences",
+        json={"style_presets": [], "image_presets": []},
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["preferences"]["style_presets"] == []
+    assert updated.json()["preferences"]["image_presets"] == []
+
+
+def test_image_presets_are_validated_and_user_scoped(client: TestClient, register):
+    register("alice")
+    presets = [
+        {
+            "id": "landscape-2k",
+            "name": "横向 2K",
+            "size": "2048x1152",
+            "quality": "high",
+            "count": 2,
+            "background": "auto",
+            "output_format": "png",
+            "output_compression": 100,
+            "builtin": True,
+        }
+    ]
+
+    updated = client.patch("/api/auth/preferences", json={"image_presets": presets})
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["preferences"]["image_presets"] == presets
+    client.post("/api/auth/logout")
+    register("bob")
+    assert "image_presets" not in client.get("/api/auth/me").json()["preferences"]
+
+
+def test_preset_libraries_are_limited_to_fifty_entries(client: TestClient, register):
+    register()
+    presets = [
+        {
+            "id": f"preset-{index}",
+            "name": f"Preset {index}",
+            "prompt": "A complete visual style prompt",
+            "builtin": False,
+        }
+        for index in range(51)
+    ]
+
+    response = client.patch("/api/auth/preferences", json={"style_presets": presets})
+
+    assert response.status_code == 422

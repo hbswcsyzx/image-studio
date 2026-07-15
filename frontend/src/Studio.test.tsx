@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 import Studio from './Studio'
-import { defaultStylePresets } from './stylePresets'
+import { defaultImagePresets, defaultStylePresets, resolveImagePresets, resolveStylePresets } from './stylePresets'
 
 const user = {
   id: 'u1', username: 'alice', role: 'user' as const, must_change_password: false,
@@ -22,7 +22,16 @@ const workspace = { id: 'w1', user_id: 'u1', name: '角色设计', favorite: fal
 test('keeps built-in style prompts independent from image dimensions', () => {
   for (const preset of defaultStylePresets) {
     expect(preset.prompt).not.toMatch(/尺寸|像素|分辨率|宽高比|横向画布|纵向画布|小尺寸/)
+    expect(preset.prompt.length).toBeGreaterThan(80)
   }
+})
+
+test('distinguishes uninitialized preset libraries from explicitly empty libraries', () => {
+  expect(resolveStylePresets({})).toEqual(defaultStylePresets)
+  expect(resolveStylePresets({ style_presets: [] })).toEqual([])
+  expect(resolveImagePresets({})).toEqual(defaultImagePresets)
+  expect(resolveImagePresets({ image_presets: [] })).toEqual([])
+  expect(defaultImagePresets.map(item => item.id)).toEqual(['quick-square', 'landscape-2k', 'portrait-hd'])
 })
 
 test('hides transparent background for gpt-image-2', () => {

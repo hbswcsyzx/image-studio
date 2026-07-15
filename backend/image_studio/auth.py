@@ -2,6 +2,7 @@ import json
 import re
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -38,6 +39,20 @@ class StylePresetInput(BaseModel):
     builtin: bool = False
 
 
+class ImagePresetInput(BaseModel):
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=40)
+    size: str = Field(pattern=r"^(auto|\d+x\d+)$")
+    custom_width: int | None = Field(default=None, ge=256, le=3840)
+    custom_height: int | None = Field(default=None, ge=256, le=3840)
+    quality: Literal["auto", "medium", "high"] = "auto"
+    count: int = Field(default=1, ge=1, le=4)
+    background: Literal["auto", "transparent", "opaque"] = "auto"
+    output_format: Literal["png", "jpeg", "webp"] = "png"
+    output_compression: int = Field(default=100, ge=0, le=100)
+    builtin: bool = False
+
+
 class PreferencesUpdate(BaseModel):
     default_image_provider_id: str | None = None
     default_image_model: str | None = None
@@ -45,6 +60,7 @@ class PreferencesUpdate(BaseModel):
     default_text_model: str | None = None
     history_summary_enabled: bool | None = None
     style_presets: list[StylePresetInput] | None = Field(default=None, max_length=50)
+    image_presets: list[ImagePresetInput] | None = Field(default=None, max_length=50)
     onboarding_completed: bool | None = None
 
 
