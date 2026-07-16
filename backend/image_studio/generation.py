@@ -19,6 +19,7 @@ from .workspaces import owned_workspace
 
 
 router = APIRouter(tags=["generation"])
+MAX_REFERENCE_IMAGES = 10
 
 
 class OptimizeInput(BaseModel):
@@ -280,8 +281,8 @@ async def generate(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     cited_asset_ids = list(dict.fromkeys(reference_asset_ids))
-    if len(cited_asset_ids) + len(references) > 4:
-        raise HTTPException(status_code=422, detail="参考图总数不能超过 4 张")
+    if len(cited_asset_ids) + len(references) > MAX_REFERENCE_IMAGES:
+        raise HTTPException(status_code=422, detail=f"参考图总数不能超过 {MAX_REFERENCE_IMAGES} 张")
 
     reference_images = []
     for asset_id in cited_asset_ids:
@@ -353,10 +354,10 @@ async def optimize_rich(workspace_id: str, request: Request, user=Depends(get_cu
         settings = {key: str(form.get(key, "")) for key in ("size", "quality", "count", "background", "output_format", "output_compression") if form.get(key) is not None}
         reference_asset_ids = [str(value) for key, value in form.multi_items() if key == "reference_asset_ids"]
         uploads = [value for key, value in form.multi_items() if key == "references" and hasattr(value, "read") and hasattr(value, "filename")]
-        for asset_id in reference_asset_ids[:4]:
+        for asset_id in reference_asset_ids[:MAX_REFERENCE_IMAGES]:
             asset = owned_asset(request, asset_id, user["id"])
             references.append((f"asset-{asset_id}.jpg", request.app.state.assets._safe_path(asset["path"]).read_bytes(), asset["mime_type"]))
-        for upload in uploads[: max(0, 4 - len(references))]:
+        for upload in uploads[: max(0, MAX_REFERENCE_IMAGES - len(references))]:
             references.append((upload.filename or "reference.jpg", await upload.read(), upload.content_type or "image/jpeg"))
     else:
         payload = OptimizeInput.model_validate(await request.json())

@@ -262,7 +262,7 @@ def test_cited_asset_must_belong_to_current_user(client: TestClient, register, m
     assert response.status_code == 404
 
 
-def test_uploaded_and_cited_references_share_four_image_limit(client: TestClient, register, monkeypatch):
+def test_uploaded_and_cited_references_share_ten_image_limit(client: TestClient, register, monkeypatch):
     provider, workspace = setup_provider_and_workspace(client, register)
     user_id = client.get("/api/auth/me").json()["id"]
     source = client.app.state.assets.save_generated(
@@ -273,17 +273,41 @@ def test_uploaded_and_cited_references_share_four_image_limit(client: TestClient
         mime_type="image/png",
     )
 
+    seen = []
+
+    def fake_generate(**kwargs):
+        seen.append(kwargs)
+        return [{"bytes": make_png(), "mime_type": "image/png"}]
+
+    monkeypatch.setattr("image_studio.generation.generate_images", fake_generate)
     response = client.post(
         f"/api/workspaces/{workspace['id']}/generate",
         data={
             "provider_id": provider["id"],
             "model": "gpt-image-2",
-            "prompt": "Too many references",
+            "prompt": "Ten references are allowed",
             "reference_asset_ids": source["id"],
         },
         files=[
             ("references", (f"reference-{index}.png", make_png(), "image/png"))
-            for index in range(4)
+            for index in range(9)
+        ],
+    )
+
+    assert response.status_code == 201, response.text
+    assert len(seen[0]["reference_images"]) == 10
+
+    response = client.post(
+        f"/api/workspaces/{workspace['id']}/generate",
+        data={
+            "provider_id": provider["id"],
+            "model": "gpt-image-2",
+            "prompt": "Eleven references are rejected",
+            "reference_asset_ids": source["id"],
+        },
+        files=[
+            ("references", (f"reference-{index}.png", make_png(), "image/png"))
+            for index in range(10)
         ],
     )
 
