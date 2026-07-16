@@ -73,6 +73,7 @@ export default function Studio(props: Props) {
   const promptRef = useRef<HTMLTextAreaElement>(null)
 
   const runs = workspace?.runs ?? []
+  const activeRun = runs.find(run => run.status === 'running')
   const timelineRuns = useMemo(() => [...runs].reverse(), [runs])
   const assets = useMemo(() => runs.flatMap(run => run.assets), [runs])
   const selected = assets.find(asset => asset.id === selectedId) ?? assets[0]
@@ -83,13 +84,41 @@ export default function Studio(props: Props) {
   const stylePresets = useMemo(() => resolveStylePresets(props.user.preferences), [props.user.preferences])
   const imagePresets = useMemo(() => resolveImagePresets(props.user.preferences), [props.user.preferences])
   const effectiveSize = size === 'custom' ? `${customWidth}x${customHeight}` : size
+  const isGenerating = busy === 'generate' || Boolean(activeRun)
 
   useEffect(() => {
-    if (!busy) { setElapsed(0); return }
+    if (!isGenerating) { setElapsed(0); return }
     const started = Date.now()
     const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
     return () => window.clearInterval(timer)
-  }, [busy])
+  }, [isGenerating])
+
+  useEffect(() => {
+    if (!workspace || !activeRun) return
+    let cancelled = false
+    let timer = 0
+    const poll = async () => {
+      let keepPolling = true
+      try {
+        const detail = await api<Workspace>(`/api/workspaces/${workspace.id}`)
+        if (cancelled) return
+        const updatedRun = (detail.runs ?? []).find(run => run.id === activeRun.id)
+        setWorkspace(detail)
+        if (updatedRun && updatedRun.status !== 'running') {
+          keepPolling = false
+          if (updatedRun.status === 'completed') {
+            setSelectedId(updatedRun.assets[0]?.id ?? '')
+            setReferences([]); setReferencedAssets([])
+            props.onQuota({ ...props.quota, used: props.quota.used + updatedRun.assets.length })
+            props.onWorkspaces(props.workspaces.map(item => item.id === detail.id ? { ...item, image_count: detail.image_count, updated_at: detail.updated_at } : item))
+          } else setError(updatedRun.error || '生成失败，请重试')
+        }
+      } catch { /* Keep polling while a transient refresh fails. */ }
+      if (!cancelled && keepPolling) timer = window.setTimeout(poll, 2500)
+    }
+    timer = window.setTimeout(poll, 1200)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [activeRun?.id, workspace?.id])
 
   useEffect(() => {
     if (imageModel === 'gpt-image-2' && background === 'transparent') setBackground('auto')
@@ -230,15 +259,24 @@ export default function Studio(props: Props) {
       form.set('background', background); form.set('output_format', outputFormat); form.set('output_compression', String(compression))
       referencedAssets.forEach(asset => form.append('reference_asset_ids', asset.id))
       references.forEach(file => form.append('references', file))
-      const run = await api<{ assets: Asset[] }>(`/api/workspaces/${workspace.id}/generate`, { method: 'POST', body: form })
-      const detail = await api<Workspace>(`/api/workspaces/${workspace.id}`)
-      setWorkspace(detail); setSelectedId(run.assets[0]?.id ?? ''); setReferences([]); setReferencedAssets([])
-      props.onQuota({ ...props.quota, used: props.quota.used + run.assets.length })
-      props.onWorkspaces(props.workspaces.map(item => item.id === detail.id ? { ...item, image_count: detail.image_count, updated_at: detail.updated_at } : item))
+      const run = await api<Run>(`/api/workspaces/${workspace.id}/generate`, { method: 'POST', body: form })
+      if (run.status === 'completed') {
+        const detail = await api<Workspace>(`/api/workspaces/${workspace.id}`)
+        setWorkspace(detail); setSelectedId(run.assets[0]?.id ?? ''); setReferences([]); setReferencedAssets([])
+        props.onQuota({ ...props.quota, used: props.quota.used + run.assets.length })
+        props.onWorkspaces(props.workspaces.map(item => item.id === detail.id ? { ...item, image_count: detail.image_count, updated_at: detail.updated_at } : item))
+      } else setWorkspace(current => current?.id === workspace.id ? { ...current, runs: [run, ...(current.runs ?? [])] } : current)
     } catch (err) {
-      if (err instanceof ApiError && typeof err.detail === 'object' && err.detail && 'code' in err.detail) setError('已达到 1000 张图片配额，请在创作库中清理不需要的图片')
-      else setError(err instanceof Error ? err.message : '生成失败，请重试')
-      try { setWorkspace(await api<Workspace>(`/api/workspaces/${workspace.id}`)) } catch { /* keep current result */ }
+      let hasBackgroundRun = false
+      try {
+        const detail = await api<Workspace>(`/api/workspaces/${workspace.id}`)
+        setWorkspace(detail)
+        hasBackgroundRun = (detail.runs ?? []).some(run => run.status === 'running')
+      } catch { /* The original network error remains actionable. */ }
+      if (!hasBackgroundRun) {
+        if (err instanceof ApiError && typeof err.detail === 'object' && err.detail && 'code' in err.detail) setError('已达到 1000 张图片配额，请在创作库中清理不需要的图片')
+        else setError(err instanceof Error ? err.message : '生成失败，请重试')
+      }
     } finally { setBusy('') }
   }
 
@@ -312,7 +350,7 @@ export default function Studio(props: Props) {
 
       <section className="output-stage" aria-label="图片输出">
         {selected ? <><div className="selected-image-wrap"><img key={selected.id} src={selected.content_url} alt="生成结果" className="selected-image viewport-fit-image" /></div><div className="image-actions"><button className="icon-button" aria-label="引用此图继续修改" title="引用此图继续修改" onClick={() => citeAsset(selected)}><ImagePlus /></button><button className={selected.favorite ? 'icon-button active-icon' : 'icon-button'} aria-label={selected.favorite ? '取消收藏图片' : '收藏图片'} onClick={() => favoriteAsset(selected)}><Heart fill={selected.favorite ? 'currentColor' : 'none'} /></button><a className="icon-button" href={selected.download_url} aria-label="下载图片"><Download /></a><button className="icon-button danger" aria-label="删除图片" onClick={() => deleteAsset(selected)}><Trash2 /></button></div><div className="image-meta">{selected.width} × {selected.height}</div></> : <div className="empty-output"><ImagePlus /><h2>从一个想法开始</h2><p>输入提示词，或添加参考图</p></div>}
-        {busy === 'generate' && <div className="generation-overlay" role="status"><LoaderCircle className="spin" /><strong>{references.length + referencedAssets.length ? '正在参考图片生成' : '正在生成图片'}</strong><span>已等待 {elapsed} 秒，结果返回后会自动保存</span></div>}
+        {isGenerating && <div className="generation-overlay" role="status"><LoaderCircle className="spin" /><strong>正在生成图片</strong><span>已等待 {elapsed} 秒，结果返回后会自动保存</span></div>}
       </section>
 
       <section className="generation-dock" aria-label="生成设置">
@@ -320,7 +358,7 @@ export default function Studio(props: Props) {
 
         <div className="dock-section params-zone"><div className="dock-heading"><span>02</span><strong>图片设置</strong></div><label className="image-preset-select"><span>图片设置预设</span><select aria-label="图片设置预设" value={imagePreset} onChange={event => applyImagePreset(event.target.value)}><option value="custom">自定义设置</option>{imagePresets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="parameter-grid"><label>尺寸<select value={size} onChange={event => { setSize(event.target.value); setImagePreset('custom') }}><option value="1024x1024">1:1 · 1024</option><option value="1536x1024">3:2 · 横向</option><option value="1024x1536">2:3 · 纵向</option><option value="2048x1152">16:9 · 2K</option><option value="3840x2160">16:9 · 4K</option><option value="custom">自定义</option></select></label>{size === 'custom' && <div className="custom-size"><label>宽<input type="number" min="256" max="3840" step="16" value={customWidth} onChange={event => { setCustomWidth(Number(event.target.value)); setImagePreset('custom') }} /></label><span>×</span><label>高<input type="number" min="256" max="3840" step="16" value={customHeight} onChange={event => { setCustomHeight(Number(event.target.value)); setImagePreset('custom') }} /></label></div>}<label>质量<select value={quality} onChange={event => { setQuality(event.target.value); setImagePreset('custom') }}><option value="auto">自动</option><option value="medium">标准</option><option value="high">高</option></select></label><label>数量<select value={count} onChange={event => { setCount(Number(event.target.value)); setImagePreset('custom') }}>{[1,2,3,4].map(item => <option key={item}>{item}</option>)}</select></label></div><details className="advanced-settings"><summary>更多设置</summary><div><label>背景<select value={background} onChange={event => { setBackground(event.target.value); setImagePreset('custom') }}><option value="auto">自动</option><option value="opaque">不透明</option>{imageModel !== 'gpt-image-2' && <option value="transparent">透明</option>}</select></label><label>格式<select value={outputFormat} onChange={event => { setOutputFormat(event.target.value); setImagePreset('custom') }}><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></label>{outputFormat !== 'png' && <label>压缩<input type="number" min="0" max="100" value={compression} onChange={event => { setCompression(Number(event.target.value)); setImagePreset('custom') }} /></label>}</div></details></div>
 
-        <div className="dock-section action-zone"><div className="dock-heading"><span>03</span><strong>生成</strong></div><div className={references.length + referencedAssets.length ? 'mode-indicator reference-mode' : 'mode-indicator'}><span>生成 {count} 张</span><small>{references.length + referencedAssets.length ? `${references.length + referencedAssets.length} 张参考图` : '无参考图'}</small><small>{effectiveSize} · {quality === 'high' ? '高质量' : quality === 'medium' ? '标准' : '自动'}</small></div><button className="primary-button generate-button" onClick={generate} disabled={busy !== ''}>{busy === 'generate' ? <LoaderCircle className="spin" /> : <Aperture />} 生成图片</button></div>
+        <div className="dock-section action-zone"><div className="dock-heading"><span>03</span><strong>生成</strong></div><div className={references.length + referencedAssets.length ? 'mode-indicator reference-mode' : 'mode-indicator'}><span>生成 {count} 张</span><small>{references.length + referencedAssets.length ? `${references.length + referencedAssets.length} 张参考图` : '无参考图'}</small><small>{effectiveSize} · {quality === 'high' ? '高质量' : quality === 'medium' ? '标准' : '自动'}</small></div><button className="primary-button generate-button" onClick={generate} disabled={busy !== '' || Boolean(activeRun)}>{isGenerating ? <LoaderCircle className="spin" /> : <Aperture />} 生成图片</button></div>
         {error && <p className="dock-error" role="alert">{error}</p>}
       </section>
     </main>

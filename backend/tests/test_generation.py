@@ -139,8 +139,10 @@ def test_text_generation_persists_b64_output(client: TestClient, register, monke
             "output_compression": "82",
         },
     )
-    assert response.status_code == 201, response.text
-    assert response.json()["assets"][0]["width"] == 64
+    assert response.status_code == 202, response.text
+    detail = client.get(f"/api/workspaces/{workspace['id']}").json()
+    completed = next(run for run in detail["runs"] if run["id"] == response.json()["id"])
+    assert completed["assets"][0]["width"] == 64
     assert payloads[0]["reference_images"] == []
     assert payloads[0]["background"] == "transparent"
     assert payloads[0]["output_format"] == "webp"
@@ -168,8 +170,35 @@ def test_generation_work_does_not_block_the_request_event_loop(client: TestClien
         },
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 202
     assert worker_threads == ["AnyIO worker thread"]
+
+
+def test_generation_is_accepted_before_background_result_is_returned(client: TestClient, register, monkeypatch):
+    provider, workspace = setup_provider_and_workspace(client, register)
+
+    monkeypatch.setattr(
+        "image_studio.generation.generate_images",
+        lambda **_kwargs: [{"bytes": make_png(), "mime_type": "image/png"}],
+    )
+
+    response = client.post(
+        f"/api/workspaces/{workspace['id']}/generate",
+        data={
+            "provider_id": provider["id"],
+            "model": "gpt-image-2",
+            "prompt": "Persist after the browser disconnects",
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    assert response.json()["status"] == "running"
+    assert response.json()["assets"] == []
+
+    detail = client.get(f"/api/workspaces/{workspace['id']}").json()
+    completed = next(run for run in detail["runs"] if run["id"] == response.json()["id"])
+    assert completed["status"] == "completed"
+    assert len(completed["assets"]) == 1
 
 
 def test_reference_upload_selects_edit_path(client: TestClient, register, monkeypatch):
@@ -193,7 +222,7 @@ def test_reference_upload_selects_edit_path(client: TestClient, register, monkey
         },
         files=[("references", ("reference.png", make_png(), "image/png"))],
     )
-    assert response.status_code == 201
+    assert response.status_code == 202
     assert len(seen[0]["reference_images"]) == 1
 
 
@@ -225,7 +254,7 @@ def test_generated_asset_can_be_cited_as_an_edit_reference(client: TestClient, r
         },
     )
 
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
     assert seen[0]["reference_images"] == [(f"asset-{source['id']}.png", source_bytes, "image/png")]
     assert response.json()["params"]["reference_asset_ids"] == [source["id"]]
     assert response.json()["params"]["reference_count"] == 1
@@ -294,7 +323,7 @@ def test_uploaded_and_cited_references_share_ten_image_limit(client: TestClient,
         ],
     )
 
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
     assert len(seen[0]["reference_images"]) == 10
 
     response = client.post(
@@ -462,7 +491,7 @@ def test_failed_generation_is_visible_in_run_history(client: TestClient, registe
             "count": "1",
         },
     )
-    assert response.status_code == 502
+    assert response.status_code == 202
     run = client.get(f"/api/workspaces/{workspace['id']}").json()["runs"][0]
     assert run["status"] == "failed"
     assert run["error"] == "上游请求失败 (524)"

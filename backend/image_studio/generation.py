@@ -6,7 +6,7 @@ import re
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from PIL import Image, ImageFilter, ImageOps
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -243,10 +243,42 @@ def optimize_prompt(
         raise RuntimeError(f"提示词优化失败：{exc}") from exc
 
 
-@router.post("/api/workspaces/{workspace_id}/generate", status_code=status.HTTP_201_CREATED)
+def complete_generation(
+    *, db, asset_store, run_id: str, user_id: str, workspace_id: str,
+    base_url: str, api_key: str, model: str, prompt: str, params: dict,
+    reference_images: list[tuple[str, bytes, str]],
+):
+    try:
+        outputs = generate_images(
+            base_url=base_url, api_key=api_key, model=model, prompt=prompt,
+            size=params["size"], quality=params["quality"], count=params["count"],
+            background=params["background"], output_format=params["output_format"],
+            output_compression=params["output_compression"], reference_images=reference_images,
+        )
+        upstream_sizes = [f"{item['upstream_size'][0]}x{item['upstream_size'][1]}" for item in outputs if item.get("upstream_size")]
+        params["upstream_sizes"] = upstream_sizes
+        params["size_adjusted_count"] = sum(value != params["size"] for value in upstream_sizes)
+        saved_assets = [
+            asset_store.save_generated(
+                user_id=user_id, workspace_id=workspace_id, run_id=run_id,
+                content=output["bytes"], mime_type=output["mime_type"],
+            )
+            for output in outputs
+        ]
+        with db.connect() as connection:
+            connection.execute("UPDATE runs SET status='completed',params_json=? WHERE id=?", (json.dumps(params), run_id))
+            connection.execute("UPDATE workspaces SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (workspace_id,))
+    except Exception as exc:
+        with db.connect() as connection:
+            connection.execute("UPDATE runs SET status='failed',error=? WHERE id=?", (str(exc)[:1000], run_id))
+            connection.execute("UPDATE workspaces SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (workspace_id,))
+
+
+@router.post("/api/workspaces/{workspace_id}/generate", status_code=status.HTTP_202_ACCEPTED)
 async def generate(
     workspace_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     provider_id: str = Form(...),
     model: str = Form(...),
     prompt: str = Form(...),
@@ -312,32 +344,21 @@ async def generate(
             (run_id, user["id"], workspace_id, provider_id, model, prompt.strip(), json.dumps(params)),
         )
     api_key = decrypt_secret(request.app.state.settings.encryption_key, provider["api_key_encrypted"])
-    try:
-        outputs = await run_in_threadpool(
-            generate_images,
-            base_url=provider["base_url"], api_key=api_key, model=model, prompt=prompt.strip(),
-            size=size, quality=quality, count=count, background=background,
-            output_format=output_format, output_compression=output_compression,
-            reference_images=reference_images,
-        )
-        upstream_sizes = [f"{item['upstream_size'][0]}x{item['upstream_size'][1]}" for item in outputs if item.get("upstream_size")]
-        params["upstream_sizes"] = upstream_sizes
-        params["size_adjusted_count"] = sum(value != size for value in upstream_sizes)
-        assets = [
-            request.app.state.assets.save_generated(
-                user_id=user["id"], workspace_id=workspace_id, run_id=run_id,
-                content=output["bytes"], mime_type=output["mime_type"],
-            )
-            for output in outputs
-        ]
-        with request.app.state.db.connect() as connection:
-            connection.execute("UPDATE runs SET status='completed',params_json=? WHERE id=?", (json.dumps(params), run_id))
-            connection.execute("UPDATE workspaces SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (workspace_id,))
-        return {"id": run_id, "prompt": prompt.strip(), "model": model, "params": params, "status": "completed", "assets": assets}
-    except Exception as exc:
-        with request.app.state.db.connect() as connection:
-            connection.execute("UPDATE runs SET status='failed',error=? WHERE id=?", (str(exc)[:1000], run_id))
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    background_tasks.add_task(
+        complete_generation,
+        db=request.app.state.db,
+        asset_store=request.app.state.assets,
+        run_id=run_id,
+        user_id=user["id"],
+        workspace_id=workspace_id,
+        base_url=provider["base_url"],
+        api_key=api_key,
+        model=model,
+        prompt=prompt.strip(),
+        params=params,
+        reference_images=reference_images,
+    )
+    return {"id": run_id, "prompt": prompt.strip(), "model": model, "params": params, "status": "running", "assets": []}
 
 
 @router.post("/api/workspaces/{workspace_id}/optimize")
