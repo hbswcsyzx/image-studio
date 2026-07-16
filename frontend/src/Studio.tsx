@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { CSSProperties, ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Aperture, Download, Heart, History, ImagePlus, LoaderCircle, Menu, Settings, Sparkles, Star, Sun, Trash2, Upload, X } from 'lucide-react'
 import { api, ApiError } from './api'
 import OnboardingGuide from './OnboardingGuide'
@@ -142,7 +142,14 @@ export default function Studio(props: Props) {
       if (kind === 'timeline') setTimelineWidth(Math.max(64, Math.min(280, initial + event.clientX - startX)))
       else setDockHeight(Math.max(220, Math.min(520, initial + startY - event.clientY)))
     }
-    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = kind === 'timeline' ? 'col-resize' : 'row-resize'
+    document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
   }
 
@@ -390,7 +397,7 @@ export default function Studio(props: Props) {
       <div className="topbar-actions"><button className="derive-preset-button" onClick={() => setCollaborationOpen(true)} disabled={!workspace || !textProvider || !textModel}><Sparkles /><span>提示词协作</span></button><div className="theme-control"><button className="icon-button" aria-label="切换主题" onClick={() => setThemeMenu(!themeMenu)}><Sun /></button>{themeMenu && <div className="menu" role="menu"><button role="menuitem" onClick={() => applyTheme('system')}>跟随系统</button><button role="menuitem" onClick={() => applyTheme('light')}>浅色</button><button role="menuitem" onClick={() => applyTheme('dark')}>深色</button></div>}</div><button className="icon-button" onClick={() => openSettings()} aria-label="打开设置"><Settings /></button></div>
     </header>
 
-    <main className="workspace-main" style={{ gridTemplateColumns: `${timelineWidth}px minmax(0, 1fr)`, gridTemplateRows: `minmax(0, 1fr) ${dockHeight}px` }}>
+    <main className="workspace-main" style={{ '--timeline-width': `${timelineWidth}px`, '--dock-height': `${dockHeight}px` } as CSSProperties}>
       <aside className="run-timeline" aria-label="历史刻度"><div className="timeline-title"><History /><span>{runs.length}</span></div><div className="timeline-scroll">{timelineRuns.map((run, runIndex) => run.assets.length ? run.assets.map(asset => <div key={asset.id} className="timeline-thumb-shell"><button className={asset.id === selected?.id ? 'timeline-thumb active' : 'timeline-thumb'} aria-label={`查看第 ${runIndex + 1} 次生成`} title="拖到输入区以引用" draggable onDragStart={event => startAssetDrag(event, asset)} onDragEnd={() => setDraggingAssetId('')} onClick={() => restoreRun(run, asset.id)}><img draggable={false} className="contained-thumbnail" src={asset.content_url} alt="历史生成图" />{asset.favorite && <Star className="thumb-star" fill="currentColor" />}</button><button className="timeline-cite" aria-label={`引用第 ${runIndex + 1} 次生成继续修改`} title="引用此图继续修改" onClick={() => citeAsset(asset)}><PlusIcon /></button></div>) : <button key={run.id} className="timeline-failed" aria-label={`查看失败的第 ${runIndex + 1} 次生成`} onClick={() => restoreRun(run)}><X /><span>失败</span></button>)}</div></aside><div className="panel-resizer timeline-resizer" role="separator" aria-label="调整历史刻度宽度" aria-orientation="vertical" onPointerDown={event => startResize('timeline', event.clientX, event.clientY)} />
 
       <section className="output-stage" aria-label="图片输出">

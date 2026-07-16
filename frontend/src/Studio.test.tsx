@@ -57,6 +57,38 @@ test('shows run history and reference images as thumbnails', async () => {
   expect(screen.getByRole('button', { name: '移除 character.png' })).toBeInTheDocument()
 })
 
+test('keeps history on the left and resizes both workspace boundaries', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const resizeUser = { ...user, id: 'u-resize' }
+  localStorage.removeItem('studio:u-resize:timeline-width')
+  localStorage.removeItem('studio:u-resize:dock-height')
+  const { container } = render(<Studio user={resizeUser} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+
+  const main = container.querySelector<HTMLElement>('.workspace-main')
+  const timeline = container.querySelector<HTMLElement>('.run-timeline')
+  const output = container.querySelector<HTMLElement>('.output-stage')
+  const dock = container.querySelector<HTMLElement>('.generation-dock')
+  const timelineResizer = container.querySelector<HTMLElement>('.timeline-resizer')
+  const dockResizer = container.querySelector<HTMLElement>('.dock-resizer')
+
+  expect(main?.firstElementChild).toBe(timeline)
+  expect(timeline).toHaveClass('run-timeline')
+  expect(output).toHaveClass('output-stage')
+  expect(dock).toHaveClass('generation-dock')
+  expect(main?.style.getPropertyValue('--timeline-width')).toBe('88px')
+  expect(main?.style.getPropertyValue('--dock-height')).toBe('290px')
+
+  fireEvent.pointerDown(timelineResizer!, { clientX: 88, clientY: 100 })
+  fireEvent.pointerMove(window, { clientX: 160, clientY: 100 })
+  fireEvent.pointerUp(window)
+  expect(main?.style.getPropertyValue('--timeline-width')).toBe('160px')
+
+  fireEvent.pointerDown(dockResizer!, { clientX: 500, clientY: 500 })
+  fireEvent.pointerMove(window, { clientX: 500, clientY: 400 })
+  fireEvent.pointerUp(window)
+  expect(main?.style.getPropertyValue('--dock-height')).toBe('390px')
+})
+
 test('orders generation history from oldest to newest', () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
   const oldAsset = { ...asset, id: 'a-old', run_id: 'r-old', content_url: '/old' }
