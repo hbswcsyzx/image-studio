@@ -89,6 +89,52 @@ test('keeps history on the left and resizes both workspace boundaries', () => {
   expect(main?.style.getPropertyValue('--dock-height')).toBe('390px')
 })
 
+test('uses the approved compact dock layout and switches refinement modes in place', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const { container } = render(<Studio user={user} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+
+  const topbarActions = container.querySelector('.topbar-actions')
+  expect(topbarActions).toContainElement(screen.getByRole('button', { name: '归纳当前会话预设' }))
+  expect(topbarActions).not.toHaveTextContent('提示词协作')
+  expect(container.querySelector('.reference-rail')).toBeInTheDocument()
+  expect(container.querySelector('.settings-generate-zone')).toBeInTheDocument()
+  expect(container.querySelector('.mode-indicator')).not.toBeInTheDocument()
+
+  expect(screen.getByRole('button', { name: '快速润色' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '切换润色模式' }))
+  expect(screen.getByRole('region', { name: '提示词协作' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /采用/ })).not.toBeInTheDocument()
+})
+
+test('resizes the timeline and dock together from their corner handle', () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const resizeUser = { ...user, id: 'u-corner-resize' }
+  localStorage.removeItem('studio:u-corner-resize:timeline-width')
+  localStorage.removeItem('studio:u-corner-resize:dock-height')
+  const { container } = render(<Studio user={resizeUser} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+  const main = container.querySelector<HTMLElement>('.workspace-main')
+  const corner = container.querySelector<HTMLElement>('.corner-resizer')
+
+  fireEvent.pointerDown(corner!, { clientX: 88, clientY: 500 })
+  fireEvent.pointerMove(window, { clientX: 168, clientY: 410 })
+  fireEvent.pointerUp(window)
+
+  expect(main?.style.getPropertyValue('--timeline-width')).toBe('168px')
+  expect(main?.style.getPropertyValue('--dock-height')).toBe('380px')
+})
+
+test('shows errors as a dismissible notification above the workspace', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+  const { container } = render(<Studio user={user} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
+
+  await userEvent.click(screen.getByRole('button', { name: '生成图片' }))
+  const alert = screen.getByRole('alert')
+  expect(alert).toHaveClass('error-toast')
+  expect(container.querySelector('.generation-dock')).not.toContainElement(alert)
+  await userEvent.click(screen.getByRole('button', { name: '关闭错误提示' }))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
 test('orders generation history from oldest to newest', () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
   const oldAsset = { ...asset, id: 'a-old', run_id: 'r-old', content_url: '/old' }
@@ -226,9 +272,6 @@ test('shows and submits the selected generation count separately from reference 
   await userEvent.selectOptions(screen.getByRole('combobox', { name: '数量' }), '3')
   await userEvent.click(screen.getByRole('button', { name: '引用此图继续修改' }))
 
-  expect(screen.getByText('生成 3 张')).toBeInTheDocument()
-  expect(screen.getByText('1 张参考图')).toBeInTheDocument()
-
   await userEvent.type(screen.getByRole('textbox', { name: '描述你想生成的图片' }), '只调整人物面部')
   await userEvent.click(screen.getByRole('button', { name: '生成图片' }))
   await waitFor(() => expect(submitted).toBeDefined())
@@ -282,7 +325,7 @@ test('does not send an image model to prompt optimization', async () => {
   render(<Studio user={invalidTextUser} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
 
   await userEvent.type(screen.getByRole('textbox', { name: '描述你想生成的图片' }), 'blue circle')
-  await userEvent.click(screen.getByRole('button', { name: '一键润色' }))
+  await userEvent.click(screen.getByRole('button', { name: '快速润色' }))
 
   expect(await screen.findByRole('alert')).toHaveTextContent('默认文本模型')
 })
@@ -299,7 +342,7 @@ test('sends style, image settings, and reference images to prompt optimization',
   await userEvent.selectOptions(screen.getByRole('combobox', { name: '风格预设' }), 'card')
   await userEvent.upload(screen.getByLabelText('上传参考图'), new File(['image'], 'reference.png', { type: 'image/png' }))
   await userEvent.type(screen.getByRole('textbox', { name: '描述你想生成的图片' }), '只保留主体')
-  await userEvent.click(screen.getByRole('button', { name: '一键润色' }))
+  await userEvent.click(screen.getByRole('button', { name: '快速润色' }))
   await waitFor(() => expect(submitted).toBeDefined())
 
   expect(submitted?.get('style_prompt')).toContain('卡牌')

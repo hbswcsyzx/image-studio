@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Check, Send, X } from 'lucide-react'
+import { LoaderCircle, Send } from 'lucide-react'
 import { api } from './api'
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string; created_at?: string }
 
 type Props = {
-  open: boolean
+  active: boolean
   workspaceId: string
   providerId: string
   model: string
@@ -13,28 +13,27 @@ type Props = {
   settings: Record<string, string>
   referenceAssetIds: string[]
   libraryReferenceIds: string[]
-  onClose: () => void
-  onApply: (prompt: string) => void
+  onSuggestion: (prompt: string) => void
+  onError: (message: string) => void
 }
 
 export default function PromptCollaboration(props: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!props.open || !props.workspaceId) return
+    if (!props.active || !props.workspaceId) return
     api<Message[]>(`/api/workspaces/${props.workspaceId}/prompt-collaboration`)
       .then(setMessages)
       .catch(() => setMessages([]))
-  }, [props.open, props.workspaceId])
+  }, [props.active, props.workspaceId])
 
-  if (!props.open) return null
+  if (!props.active) return null
 
   async function send() {
     if (!message.trim() || busy) return
-    setBusy(true); setError('')
+    setBusy(true)
     try {
       const result = await api<{ messages: Message[] }>(`/api/workspaces/${props.workspaceId}/prompt-collaboration`, {
         method: 'POST',
@@ -48,19 +47,27 @@ export default function PromptCollaboration(props: Props) {
           library_reference_ids: props.libraryReferenceIds,
         }),
       })
-      setMessages(current => [...current, ...result.messages]); setMessage('')
-    } catch (err) { setError(err instanceof Error ? err.message : '提示词协作失败') }
-    finally { setBusy(false) }
+      setMessages(current => [...current, ...result.messages])
+      const suggestion = [...result.messages].reverse().find(item => item.role === 'assistant')
+      if (suggestion) props.onSuggestion(suggestion.content)
+      setMessage('')
+    } catch (err) {
+      props.onError(err instanceof Error ? err.message : '提示词协作失败')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const candidate = [...messages].reverse().find(item => item.role === 'assistant')
-  return <div className="collaboration-backdrop" role="dialog" aria-modal="true" aria-label="提示词协作">
-    <section className="collaboration-panel">
-      <header><div><strong>提示词协作</strong><span>基于当前参考图与会话记忆</span></div><button className="icon-button" onClick={props.onClose} aria-label="关闭提示词协作"><X /></button></header>
-      <div className="collaboration-history">{messages.length ? messages.map(item => <article key={item.id} className={`collaboration-message ${item.role}`}><small>{item.role === 'user' ? '你的需求' : '候选提示词'}</small><p>{item.content}</p>{item.role === 'assistant' && <button className="secondary-button" onClick={() => props.onApply(item.content)}><Check />采用此提示词</button>}</article>) : <p className="collaboration-empty">描述你希望参考图如何组合、保留或改变。协作助手会先澄清关键歧义，再给出可直接生图的提示词。</p>}</div>
-      <div className="collaboration-composer"><textarea value={message} onChange={event => setMessage(event.target.value)} placeholder="补充或修改你的创作需求" rows={3} /><button className="primary-button" onClick={send} disabled={busy || !message.trim()}>{busy ? '正在思考' : <><Send />发送</>}</button></div>
-      {candidate && <button className="apply-latest" onClick={() => props.onApply(candidate.content)}><Check />采用最新候选提示词</button>}
-      {error && <p className="dock-error" role="alert">{error}</p>}
-    </section>
-  </div>
+  return <section className="collaboration-panel" role="region" aria-label="提示词协作">
+    <div className="collaboration-history">
+      {messages.length ? messages.map(item => <article key={item.id} className={`collaboration-message ${item.role}`}>
+        <small>{item.role === 'user' ? '你的需求' : '助手建议'}</small>
+        <p>{item.content}</p>
+      </article>) : <p className="collaboration-empty">描述参考图如何组合、哪些内容需要保留，以及最终希望呈现的效果。助手会结合当前风格和图片设置持续完善提示词。</p>}
+    </div>
+    <div className="collaboration-composer">
+      <textarea aria-label="继续与提示词助手沟通" value={message} onChange={event => setMessage(event.target.value)} placeholder="继续说明需要保留、组合或调整的内容" rows={3} />
+      <button className="primary-button" aria-label="发送" onClick={send} disabled={busy || !message.trim()}>{busy ? <LoaderCircle className="spin" /> : <Send />}<span>{busy ? '正在思考' : '发送'}</span></button>
+    </div>
+  </section>
 }

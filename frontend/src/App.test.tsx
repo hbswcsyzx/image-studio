@@ -50,7 +50,7 @@ test('offers direct generation and optional prompt optimization', async () => {
   render(<App />)
   await screen.findByRole('heading', { name: '产品概念' })
   expect(screen.getByRole('button', { name: '生成图片' })).toBeEnabled()
-  expect(screen.getByRole('button', { name: '一键润色' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '快速润色' })).toBeInTheDocument()
   expect(screen.getByLabelText('上传参考图')).toBeInTheDocument()
   expect(screen.queryByText('上游')).not.toBeInTheDocument()
   expect(screen.queryByText('图片模型')).not.toBeInTheDocument()
