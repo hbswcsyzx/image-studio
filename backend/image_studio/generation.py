@@ -289,6 +289,7 @@ async def generate(
     output_format: str = Form("png"),
     output_compression: int = Form(100),
     reference_asset_ids: list[str] = Form(default=[]),
+    library_reference_ids: list[str] = Form(default=[]),
     references: list[UploadFile] = File(default=[]),
     user=Depends(get_current_user),
 ):
@@ -313,7 +314,8 @@ async def generate(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     cited_asset_ids = list(dict.fromkeys(reference_asset_ids))
-    if len(cited_asset_ids) + len(references) > MAX_REFERENCE_IMAGES:
+    stored_reference_ids = list(dict.fromkeys(library_reference_ids))
+    if len(cited_asset_ids) + len(stored_reference_ids) + len(references) > MAX_REFERENCE_IMAGES:
         raise HTTPException(status_code=422, detail=f"参考图总数不能超过 {MAX_REFERENCE_IMAGES} 张")
 
     reference_images = []
@@ -322,6 +324,14 @@ async def generate(
         content = request.app.state.assets._safe_path(asset["path"]).read_bytes()
         extension = {"image/jpeg": "jpg", "image/webp": "webp"}.get(asset["mime_type"], "png")
         reference_images.append((f"asset-{asset_id}.{extension}", content, asset["mime_type"]))
+
+    for asset_id in stored_reference_ids:
+        asset = request.app.state.assets.get_reference(asset_id, user["id"])
+        if not asset:
+            raise HTTPException(status_code=404, detail="参考图库图片不存在")
+        content = request.app.state.assets._safe_path(asset["path"]).read_bytes()
+        extension = {"image/jpeg": "jpg", "image/webp": "webp"}.get(asset["mime_type"], "png")
+        reference_images.append((f"reference-{asset_id}.{extension}", content, asset["mime_type"]))
 
     for upload in references:
         content = await upload.read()
@@ -335,6 +345,7 @@ async def generate(
         "background": background, "output_format": output_format,
         "output_compression": output_compression,
         "reference_asset_ids": cited_asset_ids,
+        "library_reference_ids": stored_reference_ids,
         "reference_count": len(reference_images),
     }
     with request.app.state.db.connect() as connection:
@@ -374,10 +385,16 @@ async def optimize_rich(workspace_id: str, request: Request, user=Depends(get_cu
         style_prompt = str(form.get("style_prompt", ""))
         settings = {key: str(form.get(key, "")) for key in ("size", "quality", "count", "background", "output_format", "output_compression") if form.get(key) is not None}
         reference_asset_ids = [str(value) for key, value in form.multi_items() if key == "reference_asset_ids"]
+        library_reference_ids = [str(value) for key, value in form.multi_items() if key == "library_reference_ids"]
         uploads = [value for key, value in form.multi_items() if key == "references" and hasattr(value, "read") and hasattr(value, "filename")]
         for asset_id in reference_asset_ids[:MAX_REFERENCE_IMAGES]:
             asset = owned_asset(request, asset_id, user["id"])
             references.append((f"asset-{asset_id}.jpg", request.app.state.assets._safe_path(asset["path"]).read_bytes(), asset["mime_type"]))
+        for asset_id in library_reference_ids[: max(0, MAX_REFERENCE_IMAGES - len(references))]:
+            asset = request.app.state.assets.get_reference(asset_id, user["id"])
+            if not asset:
+                raise HTTPException(status_code=404, detail="参考图库图片不存在")
+            references.append((f"reference-{asset_id}.jpg", request.app.state.assets._safe_path(asset["path"]).read_bytes(), asset["mime_type"]))
         for upload in uploads[: max(0, MAX_REFERENCE_IMAGES - len(references))]:
             references.append((upload.filename or "reference.jpg", await upload.read(), upload.content_type or "image/jpeg"))
     else:

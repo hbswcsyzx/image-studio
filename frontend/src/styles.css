@@ -364,3 +364,33 @@ button:disabled { cursor: not-allowed; opacity: .52; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
   .spin { animation: none; }
 }
+
+.workspace-main { position: relative; }
+.run-timeline { min-width: 0; width: 100%; }
+.timeline-thumb-shell { width: min(100%, 148px); }
+.timeline-thumb { width: 100%; aspect-ratio: 1; }
+.panel-resizer { z-index: 8; touch-action: none; background: transparent; transition: background 140ms ease; }
+.panel-resizer:hover, .panel-resizer:active { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.timeline-resizer { grid-column: 1; grid-row: 1 / 3; justify-self: end; width: 7px; cursor: col-resize; }
+.dock-resizer { grid-column: 2; grid-row: 1; align-self: end; height: 7px; cursor: row-resize; }
+.collaboration-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, #000 48%, transparent); backdrop-filter: blur(4px); }
+.collaboration-panel { width: min(760px, 100%); max-height: min(760px, calc(100vh - 48px)); display: grid; grid-template-rows: auto minmax(180px, 1fr) auto auto; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 24px 72px color-mix(in srgb, #000 45%, transparent); }
+.collaboration-panel > header, .reference-library-popover > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.collaboration-panel > header div { display: grid; gap: 2px; }
+.collaboration-panel > header span { color: var(--muted); font-size: 12px; }
+.collaboration-history { overflow: auto; display: grid; gap: 10px; padding-right: 4px; }
+.collaboration-message { max-width: 92%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); }
+.collaboration-message.user { justify-self: end; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.collaboration-message small { color: var(--muted); }
+.collaboration-message p { margin: 6px 0 0; white-space: pre-wrap; line-height: 1.55; }
+.collaboration-message .secondary-button { margin-top: 10px; }
+.collaboration-empty { color: var(--muted); line-height: 1.6; }
+.collaboration-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.collaboration-composer textarea { min-height: 74px; resize: vertical; }
+.apply-latest { justify-self: end; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.reference-library-popover { position: fixed; z-index: 45; right: 24px; bottom: 24px; width: min(440px, calc(100vw - 32px)); max-height: min(520px, calc(100vh - 48px)); overflow: auto; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 18px 54px color-mix(in srgb, #000 35%, transparent); }
+.reference-library-popover > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 12px; }
+.library-item { display: grid; gap: 5px; padding: 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--canvas); color: var(--text); cursor: pointer; text-align: left; }
+.library-item img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.library-item span { color: var(--muted); font-size: 11px; }
+@media (max-width: 720px) { .panel-resizer { display: none; } .collaboration-composer { grid-template-columns: 1fr; } .reference-library-popover { right: 16px; bottom: 16px; } }

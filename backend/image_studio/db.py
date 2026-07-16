@@ -67,9 +67,31 @@ CREATE TABLE IF NOT EXISTS assets (
   favorite INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS reference_assets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  sha256 TEXT NOT NULL,
+  path TEXT NOT NULL UNIQUE,
+  mime_type TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, sha256)
+);
+CREATE TABLE IF NOT EXISTS prompt_collaboration_messages (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_workspaces_user ON workspaces(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_workspace ON runs(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_assets_user_kind ON assets(user_id, kind);
+CREATE INDEX IF NOT EXISTS idx_reference_assets_user ON reference_assets(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collaboration_workspace ON prompt_collaboration_messages(workspace_id, created_at ASC);
 CREATE TABLE IF NOT EXISTS system_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   smtp_host TEXT NOT NULL DEFAULT '',
