@@ -43,3 +43,21 @@ def test_prompt_collaboration_persists_messages(client: TestClient, register, mo
         ("user", "Keep the dress and combine both references"),
         ("assistant", "A faithful cinematic prompt"),
     ]
+
+
+def test_prompt_collaboration_can_be_permanently_reset(client: TestClient, register, monkeypatch):
+    register("artist", "correct horse battery")
+    provider = client.post("/api/providers", json={"name": "Text", "base_url": "https://up.example", "api_key": "key"}).json()
+    workspace = client.post("/api/workspaces", json={"name": "Collaboration"}).json()
+    monkeypatch.setattr("image_studio.prompt_collaboration.create_collaboration_reply", lambda **_kwargs: "A faithful cinematic prompt")
+    endpoint = f"/api/workspaces/{workspace['id']}/prompt-collaboration"
+    created = client.post(
+        endpoint,
+        json={"provider_id": provider["id"], "model": "gpt-5.5", "message": "Remember this direction"},
+    )
+    assert created.status_code == 200, created.text
+
+    deleted = client.delete(endpoint)
+
+    assert deleted.status_code == 204, deleted.text
+    assert client.get(endpoint).json() == []

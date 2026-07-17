@@ -2,7 +2,7 @@ import json
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -80,6 +80,17 @@ def list_messages(workspace_id: str, request: Request, user=Depends(get_current_
             (workspace_id, user["id"]),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+@router.delete("/{workspace_id}/prompt-collaboration", status_code=204)
+def reset_collaboration(workspace_id: str, request: Request, user=Depends(get_current_user)):
+    owned_workspace(request, workspace_id, user["id"])
+    with request.app.state.db.connect() as connection:
+        connection.execute(
+            "DELETE FROM prompt_collaboration_messages WHERE workspace_id=? AND user_id=?",
+            (workspace_id, user["id"]),
+        )
+    return Response(status_code=204)
 
 
 @router.post("/{workspace_id}/prompt-collaboration")
