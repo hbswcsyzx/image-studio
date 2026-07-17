@@ -123,16 +123,22 @@ test('resizes the timeline and dock together from their corner handle', () => {
   expect(main?.style.getPropertyValue('--dock-height')).toBe('380px')
 })
 
-test('shows errors as a dismissible notification above the workspace', async () => {
+test('keeps errors in order until each notification is dismissed manually', () => {
+  vi.useFakeTimers()
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
   const { container } = render(<Studio user={user} workspaces={[workspace]} providers={providers} quota={{ used: 1, limit: 1000, conversations_used: 1, conversations_limit: 100 }} onUser={vi.fn()} onWorkspaces={vi.fn()} onProviders={vi.fn()} onQuota={vi.fn()} onLogout={vi.fn()} />)
 
-  await userEvent.click(screen.getByRole('button', { name: '生成图片' }))
-  const alert = screen.getByRole('alert')
-  expect(alert).toHaveClass('error-toast')
-  expect(container.querySelector('.generation-dock')).not.toContainElement(alert)
-  await userEvent.click(screen.getByRole('button', { name: '关闭错误提示' }))
-  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '生成图片' }))
+  fireEvent.click(screen.getByRole('button', { name: '生成图片' }))
+  expect(screen.getAllByRole('alert')).toHaveLength(2)
+  expect(screen.getAllByRole('alert')[0]).toHaveClass('error-toast')
+  expect(container.querySelector('.generation-dock')).not.toContainElement(screen.getAllByRole('alert')[0])
+
+  vi.advanceTimersByTime(30_000)
+  expect(screen.getAllByRole('alert')).toHaveLength(2)
+  fireEvent.click(screen.getAllByRole('button', { name: '关闭错误提示' })[0])
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  vi.useRealTimers()
 })
 
 test('orders generation history from oldest to newest', () => {

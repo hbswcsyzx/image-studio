@@ -72,7 +72,7 @@ export default function Studio(props: Props) {
   const [compression, setCompression] = useState(100)
   const [busy, setBusy] = useState<'generate' | 'optimize' | ''>('')
   const [elapsed, setElapsed] = useState(0)
-  const [error, setError] = useState('')
+  const [errors, setErrors] = useState<Array<{ id: number; message: string }>>([])
   const [selectedId, setSelectedId] = useState('')
   const [draggingAssetId, setDraggingAssetId] = useState('')
   const [favoriteAssets, setFavoriteAssets] = useState<Asset[]>([])
@@ -83,6 +83,13 @@ export default function Studio(props: Props) {
   const [dockHeight, setDockHeight] = useState(() => Number(localStorage.getItem(`studio:${props.user.id}:dock-height`)) || 290)
   const uploadRef = useRef<HTMLInputElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  const nextErrorIdRef = useRef(1)
+
+  function setError(message: string) {
+    if (!message) return
+    const id = nextErrorIdRef.current++
+    setErrors(current => [...current, { id, message }])
+  }
 
   const runs = workspace?.runs ?? []
   const activeRun = runs.find(run => run.status === 'running')
@@ -135,12 +142,6 @@ export default function Studio(props: Props) {
 
   useEffect(() => { localStorage.setItem(`studio:${props.user.id}:timeline-width`, String(timelineWidth)) }, [timelineWidth, props.user.id])
   useEffect(() => { localStorage.setItem(`studio:${props.user.id}:dock-height`, String(dockHeight)) }, [dockHeight, props.user.id])
-
-  useEffect(() => {
-    if (!error) return
-    const timer = window.setTimeout(() => setError(''), 8000)
-    return () => window.clearTimeout(timer)
-  }, [error])
 
   function startResize(kind: 'timeline' | 'dock' | 'both', startX: number, startY: number) {
     const initialTimelineWidth = timelineWidth
@@ -417,7 +418,9 @@ export default function Studio(props: Props) {
       <div className="topbar-actions"><button className="derive-preset-button" aria-label="归纳当前会话预设" title="从当前会话归纳预设" onClick={derivePresets} disabled={deriving}>{deriving ? <LoaderCircle className="spin" /> : <Sparkles />}<span>{deriving ? '归纳中' : '归纳预设'}</span></button><div className="theme-control"><button className="icon-button" aria-label="切换主题" onClick={() => setThemeMenu(!themeMenu)}><Sun /></button>{themeMenu && <div className="menu" role="menu"><button role="menuitem" onClick={() => applyTheme('system')}>跟随系统</button><button role="menuitem" onClick={() => applyTheme('light')}>浅色</button><button role="menuitem" onClick={() => applyTheme('dark')}>深色</button></div>}</div><button className="icon-button" onClick={() => openSettings()} aria-label="打开设置"><Settings /></button></div>
     </header>
 
-    {error && <div className="error-toast" role="alert"><AlertCircle /><span>{error}</span><button className="icon-button" aria-label="关闭错误提示" onClick={() => setError('')}><X /></button></div>}
+    {errors.length > 0 && <div className="error-stack" aria-label="错误通知">
+      {errors.map(error => <div className="error-toast" role="alert" key={error.id}><AlertCircle /><span>{error.message}</span><button className="icon-button" aria-label="关闭错误提示" onClick={() => setErrors(current => current.filter(item => item.id !== error.id))}><X /></button></div>)}
+    </div>}
 
     <main className="workspace-main" style={{ '--timeline-width': `${timelineWidth}px`, '--dock-height': `${dockHeight}px` } as CSSProperties}>
       <aside className="run-timeline" aria-label="历史刻度"><div className="timeline-title"><History /><span>{runs.length}</span></div><div className="timeline-scroll">{timelineRuns.map((run, runIndex) => run.assets.length ? run.assets.map(asset => <div key={asset.id} className="timeline-thumb-shell"><button className={asset.id === selected?.id ? 'timeline-thumb active' : 'timeline-thumb'} aria-label={`查看第 ${runIndex + 1} 次生成`} title="拖到输入区以引用" draggable onDragStart={event => startAssetDrag(event, asset)} onDragEnd={() => setDraggingAssetId('')} onClick={() => restoreRun(run, asset.id)}><img draggable={false} className="contained-thumbnail" src={asset.content_url} alt="历史生成图" />{asset.favorite && <Star className="thumb-star" fill="currentColor" />}</button><button className="timeline-cite" aria-label={`引用第 ${runIndex + 1} 次生成继续修改`} title="引用此图继续修改" onClick={() => citeAsset(asset)}><PlusIcon /></button></div>) : <button key={run.id} className="timeline-failed" aria-label={`查看失败的第 ${runIndex + 1} 次生成`} onClick={() => restoreRun(run)}><X /><span>失败</span></button>)}</div></aside><div className="panel-resizer timeline-resizer" role="separator" aria-label="调整历史刻度宽度" aria-orientation="vertical" onPointerDown={event => startResize('timeline', event.clientX, event.clientY)} />

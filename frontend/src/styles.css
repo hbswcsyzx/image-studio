@@ -191,7 +191,8 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .advanced-settings summary { padding: 9px 0 2px; color: var(--muted); font-size: 11px; cursor: pointer; }
 .advanced-settings > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 7px; }
 .generate-button { width: 100%; min-height: 46px; margin-top: auto; }
-.error-toast { position: fixed; z-index: 70; top: 66px; left: 50%; width: min(620px, calc(100vw - 32px)); min-height: 46px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 7px 6px 13px; border: 1px solid color-mix(in srgb, var(--danger) 52%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--text); box-shadow: var(--shadow); transform: translateX(-50%); animation: toast-in 220ms var(--ease-out) both; }
+.error-stack { position: fixed; z-index: 70; top: 66px; left: 50%; width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 82px); display: grid; gap: 8px; overflow-y: auto; transform: translateX(-50%); }
+.error-toast { width: 100%; min-height: 46px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 7px 6px 13px; border: 1px solid color-mix(in srgb, var(--danger) 52%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--text); box-shadow: var(--shadow); animation: toast-in 220ms var(--ease-out) both; }
 .error-toast > svg { width: 18px; height: 18px; color: var(--danger); }
 .error-toast span { min-width: 0; line-height: 1.4; }
 .error-toast .icon-button { width: 32px; height: 32px; }
@@ -316,7 +317,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 @keyframes generation-sweep { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
 @keyframes refinement-flip { from { opacity: .45; transform: rotateX(72deg); } to { opacity: 1; transform: rotateX(0); } }
 @keyframes refinement-flip-reverse { from { opacity: .45; transform: rotateX(-72deg); } to { opacity: 1; transform: rotateX(0); } }
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 .onboarding-close { position: absolute; right: 12px; top: 12px; }
 .onboarding-panel h2 { margin: 5px 0 8px; font-size: 25px; }
 .onboarding-lead { max-width: 570px; margin: 0; color: var(--muted); line-height: 1.55; }
