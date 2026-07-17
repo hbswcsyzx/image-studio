@@ -403,9 +403,21 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .collaboration-message.user { align-self: flex-end; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .collaboration-message small { color: var(--muted); }
 .collaboration-message p { margin: 6px 0 0; white-space: pre-wrap; line-height: 1.55; }
+.collaboration-markdown { margin-top: 6px; line-height: 1.55; overflow-wrap: anywhere; }
+.collaboration-markdown > :first-child { margin-top: 0; }
+.collaboration-markdown > :last-child { margin-bottom: 0; }
+.collaboration-markdown p { margin: 0 0 8px; white-space: normal; }
+.collaboration-markdown h1, .collaboration-markdown h2, .collaboration-markdown h3 { margin: 12px 0 6px; font-size: 1em; }
+.collaboration-markdown ul, .collaboration-markdown ol { margin: 6px 0 8px; padding-left: 22px; }
+.collaboration-markdown li + li { margin-top: 3px; }
+.collaboration-markdown blockquote { margin: 8px 0; padding-left: 10px; border-left: 2px solid var(--border-strong); color: var(--muted); }
+.collaboration-markdown code { padding: 1px 4px; border-radius: 3px; background: var(--surface-3); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .9em; }
+.collaboration-markdown pre { max-width: 100%; margin: 8px 0; padding: 10px; overflow-x: auto; border-radius: 5px; background: var(--surface-3); }
+.collaboration-markdown pre code { padding: 0; background: transparent; }
+.collaboration-markdown a { color: var(--accent); }
 .collaboration-empty { margin: auto; max-width: 600px; color: var(--muted); line-height: 1.6; text-align: center; }
-.collaboration-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
-.collaboration-composer textarea { min-height: 66px; max-height: 220px; resize: vertical; overflow-y: auto; }
+.collaboration-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.collaboration-composer textarea { height: 42px; min-height: 42px; max-height: 108px; padding-block: 9px; resize: none; overflow-y: hidden; line-height: 22px; }
 .collaboration-composer .primary-button { min-width: 82px; }
 .reference-library-popover { position: fixed; z-index: 45; right: 24px; bottom: 24px; width: min(440px, calc(100vw - 32px)); max-height: min(520px, calc(100vh - 48px)); overflow: auto; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 18px 54px color-mix(in srgb, #000 35%, transparent); }
 .reference-library-popover > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 12px; }

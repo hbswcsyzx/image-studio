@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { LoaderCircle, MessageSquarePlus, Send } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { api } from './api'
+
+const COMPOSER_MIN_HEIGHT = 42
+const COMPOSER_MAX_HEIGHT = 108
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string; created_at?: string }
 
@@ -59,7 +64,7 @@ export default function PromptCollaboration(props: Props) {
       const suggestion = [...result.messages].reverse().find(item => item.role === 'assistant')
       if (suggestion) props.onSuggestion(suggestion.content)
       setMessage('')
-      if (composerRef.current) composerRef.current.style.height = ''
+      resetComposer()
     } catch (err) {
       props.onError(err instanceof Error ? err.message : '提示词协作失败')
     } finally {
@@ -75,7 +80,7 @@ export default function PromptCollaboration(props: Props) {
       await api<void>(`/api/workspaces/${props.workspaceId}/prompt-collaboration`, { method: 'DELETE' })
       setMessages([])
       setMessage('')
-      if (composerRef.current) composerRef.current.style.height = ''
+      resetComposer()
     } catch (err) {
       props.onError(err instanceof Error ? err.message : '重置提示词对话失败')
     } finally {
@@ -85,7 +90,15 @@ export default function PromptCollaboration(props: Props) {
 
   function resizeComposer(target: HTMLTextAreaElement) {
     target.style.height = 'auto'
-    target.style.height = `${Math.min(Math.max(target.scrollHeight, 66), 220)}px`
+    const borderedContentHeight = target.scrollHeight + 2
+    target.style.height = `${Math.min(Math.max(borderedContentHeight, COMPOSER_MIN_HEIGHT), COMPOSER_MAX_HEIGHT)}px`
+    target.style.overflowY = borderedContentHeight > COMPOSER_MAX_HEIGHT ? 'auto' : 'hidden'
+  }
+
+  function resetComposer() {
+    if (!composerRef.current) return
+    composerRef.current.style.height = ''
+    composerRef.current.style.overflowY = 'hidden'
   }
 
   return <section className="collaboration-panel" role="region" aria-label="提示词协作">
@@ -99,11 +112,13 @@ export default function PromptCollaboration(props: Props) {
     <div ref={historyRef} className="collaboration-history" role="log" aria-label="提示词协作记录" aria-live="polite">
       {messages.length ? messages.map(item => <article key={item.id} className={`collaboration-message ${item.role}`}>
         <small>{item.role === 'user' ? '你的需求' : '助手建议'}</small>
-        <p>{item.content}</p>
+        {item.role === 'assistant'
+          ? <div className="collaboration-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown></div>
+          : <p>{item.content}</p>}
       </article>) : <p className="collaboration-empty">描述参考图如何组合、哪些内容需要保留，以及最终希望呈现的效果。助手会结合当前风格和图片设置持续完善提示词。</p>}
     </div>
     <div className="collaboration-composer">
-      <textarea ref={composerRef} aria-label="继续与提示词助手沟通" value={message} onChange={event => { setMessage(event.target.value); resizeComposer(event.target) }} placeholder="继续说明需要保留、组合或调整的内容" rows={2} />
+      <textarea ref={composerRef} aria-label="继续与提示词助手沟通" value={message} onChange={event => { setMessage(event.target.value); resizeComposer(event.target) }} placeholder="继续说明需要保留、组合或调整的内容" rows={1} />
       <button className="primary-button" aria-label="发送" onClick={send} disabled={busy || !message.trim()}>{busy ? <LoaderCircle className="spin" /> : <Send />}<span>{busy ? '正在思考' : '发送'}</span></button>
     </div>
   </section>

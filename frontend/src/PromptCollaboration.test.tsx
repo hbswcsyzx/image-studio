@@ -56,7 +56,7 @@ test('permanently clears collaboration memory after confirmation', async () => {
   expect(screen.getByText(/描述参考图如何组合/)).toBeInTheDocument()
 })
 
-test('grows the composer with its content and scrolls to the latest reply', async () => {
+test('grows the one-line composer up to four lines and scrolls to the latest reply', async () => {
   let resolveReply!: (response: Response) => void
   vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     if (!init?.method) return Response.json([])
@@ -66,10 +66,15 @@ test('grows the composer with its content and scrolls to the latest reply', asyn
   const history = screen.getByRole('log', { name: '提示词协作记录' })
   Object.defineProperty(history, 'scrollHeight', { configurable: true, value: 420 })
   const textbox = screen.getByRole('textbox', { name: '继续与提示词助手沟通' })
-  Object.defineProperty(textbox, 'scrollHeight', { configurable: true, value: 132 })
+  let composerScrollHeight = 40
+  Object.defineProperty(textbox, 'scrollHeight', { configurable: true, get: () => composerScrollHeight })
 
   await userEvent.type(textbox, '继续细化面部表情')
-  expect(textbox).toHaveStyle({ height: '132px' })
+  expect(textbox).toHaveAttribute('rows', '1')
+  expect(textbox).toHaveStyle({ height: '42px' })
+  composerScrollHeight = 180
+  await userEvent.type(textbox, '{enter}第二行{enter}第三行{enter}第四行{enter}第五行')
+  expect(textbox).toHaveStyle({ height: '108px' })
   await userEvent.click(screen.getByRole('button', { name: '发送' }))
   resolveReply(Response.json({ messages: [
     { id: 'm-user', role: 'user', content: '继续细化面部表情' },
@@ -78,4 +83,17 @@ test('grows the composer with its content and scrolls to the latest reply', asyn
 
   expect(await screen.findByText('新的完整提示词')).toBeInTheDocument()
   await waitFor(() => expect(history.scrollTop).toBe(420))
+})
+
+test('renders assistant markdown while preserving user text literally', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json([
+    { id: 'm-user', role: 'user', content: '**用户原文**' },
+    { id: 'm-assistant', role: 'assistant', content: '**重点内容**\n\n- 第一项\n- 第二项' },
+  ])))
+  render(<PromptCollaboration {...defaultProps} />)
+
+  expect(await screen.findByText('重点内容', { selector: 'strong' })).toBeInTheDocument()
+  expect(screen.getByText('第一项', { selector: 'li' })).toBeInTheDocument()
+  expect(screen.getByText('**用户原文**')).toBeInTheDocument()
+  expect(screen.queryByText('用户原文', { selector: 'strong' })).not.toBeInTheDocument()
 })
